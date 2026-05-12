@@ -1,6 +1,4 @@
 """
-epidemic_models.py
-==================
 Simulation of classic and social-network epidemic models:
   - SI     (Susceptible - Infected)
   - SIS    (Susceptible - Infected - Susceptible)
@@ -8,25 +6,11 @@ Simulation of classic and social-network epidemic models:
   - SEIR   (Susceptible - Exposed - Infected - Recovered)
   - SEPNS  (Susceptible - Exposed - Positively Infected - Negatively Infected - Susceptible)
   - SEDIS  (Susceptible - Exposed - Doubtful - Infected - Susceptible)
-  - SEDPNR (Susceptible - Exposed - Doubtful - Positively Infected - Negatively Infected - Restrained)
+  - SEDPNR (Susceptible - Exposed - Doubtful - Positively Infected -
+            Negatively Infected - Restrained)
 
 Each model is solved with scipy.integrate.solve_ivp (RK45) and plotted
 with matplotlib. All parameters are configured in main().
-
-Plot conventions
-----------------
-- Titles use proper Greek-letter subscripts via matplotlib mathtext,
-  e.g. r"$\beta_1$", r"$\alpha$".
-- The infection peak is marked with a single red dot; all numeric peak
-  details are printed to stdout only.
-- No annotation boxes or R₀ labels appear inside the figure; only the
-  compartment colour legend is shown.
-
-References
-----------
-Govindankutty & Gopalan (2024). "Epidemic modeling for misinformation spread
-in digital networks through a social intelligence approach."
-Scientific Reports 14, 19100. https://doi.org/10.1038/s41598-024-69657-0
 """
 
 import os
@@ -47,17 +31,17 @@ FIGURE_SIZE    = (10, 5)
 LINE_WIDTH     = 2.2
 FIGS_DIR       = "figs"
 
-PEAK_DOT_COLOR = "#D32F2F"   # vivid red used for the peak marker
-PEAK_DOT_SIZE  = 80          # scatter marker size (points²)
+PEAK_DOT_COLOR = "#D32F2F"   # vivid red for the peak marker
+PEAK_DOT_SIZE  = 80          # scatter marker area (points²)
 
 COLORS = {
     "S": "#2196F3",  # blue
     "E": "#FF9800",  # orange
     "I": "#F44336",  # red
     "R": "#4CAF50",  # green
-    "P": "#9C27B0",  # purple  – Positively infected
-    "N": "#E91E63",  # pink    – Negatively infected
-    "D": "#795548",  # brown   – Doubtful
+    "P": "#9C27B0",  # purple – Positively infected
+    "N": "#E91E63",  # pink   – Negatively infected
+    "D": "#795548",  # brown  – Doubtful
 }
 
 
@@ -67,77 +51,92 @@ COLORS = {
 
 @dataclass
 class SIParams:
-    population      : int   = 10_000
-    initial_infected: int   = 10
-    beta            : float = 0.30
-    t_end           : float = 60.0
-    t_steps         : int   = 1_000
+    """Parameters for the SI (Susceptible-Infected) model.
+
+    The SI model is the simplest epidemic model used here. Individuals start
+    as Susceptible (S) or Infected (I). Infection is irreversible in this
+    model, so nobody recovers and the infected population can only increase.
+    """
+    population      : int   = 10_000  # total number of individuals in the network
+    initial_infected: int   = 10      # number of infected individuals at t=0
+    beta            : float = 0.30    # S -> I   transmission rate
+    t_end           : float = 60.0    # simulation end time (days)
+    t_steps         : int   = 1_000   # number of equally-spaced time points
 
 
 @dataclass
 class SISParams:
-    population      : int   = 10_000
-    initial_infected: int   = 10
-    beta            : float = 0.30
-    gamma           : float = 0.10
-    t_end           : float = 120.0
-    t_steps         : int   = 1_000
+    """Parameters for the SIS (Susceptible-Infected-Susceptible) model.
+
+    The SIS model adds recovery without permanent immunity. Infected
+    individuals recover back into the Susceptible (S) compartment, so the
+    infection can persist as an endemic state when beta / gamma is greater
+    than one.
+    """
+    population      : int   = 10_000  # total number of individuals in the network
+    initial_infected: int   = 10      # number of infected individuals at t=0
+    beta            : float = 0.30    # S -> I   transmission rate
+    gamma           : float = 0.10    # I -> S   recovery rate (no permanent immunity)
+    t_end           : float = 120.0   # simulation end time (days)
+    t_steps         : int   = 1_000   # number of equally-spaced time points
 
 
 @dataclass
 class SIRParams:
-    population        : int   = 10_000
-    initial_infected  : int   = 10
-    initial_recovered : int   = 0
-    beta              : float = 0.30
-    gamma             : float = 0.10
-    t_end             : float = 160.0
-    t_steps           : int   = 1_000
+    """Parameters for the SIR (Susceptible-Infected-Recovered) model.
+
+    The SIR model adds a Recovered (R) compartment. Infected individuals move
+    to R after recovery and are treated as permanently immune, so they do not
+    return to the Susceptible pool.
+    """
+    population        : int   = 10_000  # total number of individuals in the network
+    initial_infected  : int   = 10      # number of infected individuals at t=0
+    initial_recovered : int   = 0       # number of recovered (immune) individuals at t=0
+    beta              : float = 0.30    # S -> I   transmission rate
+    gamma             : float = 0.10    # I -> R   recovery rate (permanent immunity)
+    t_end             : float = 160.0   # simulation end time (days)
+    t_steps           : int   = 1_000   # number of equally-spaced time points
 
 
 @dataclass
 class SEIRParams:
-    population      : int   = 10_000
-    initial_exposed : int   = 0
-    initial_infected: int   = 10
-    beta            : float = 0.30
-    sigma           : float = 0.20
-    gamma           : float = 0.10
-    t_end           : float = 200.0
-    t_steps         : int   = 1_000
+    """Parameters for the SEIR (Susceptible-Exposed-Infected-Recovered) model.
+
+    The SEIR model inserts an Exposed (E) compartment between Susceptible and
+    Infected. Exposed individuals are infected but not yet infectious; sigma
+    controls the transition from E to I, and gamma controls recovery from I to R.
+    """
+    population      : int   = 10_000  # total number of individuals in the network
+    initial_exposed : int   = 0       # number of exposed (latent) individuals at t=0
+    initial_infected: int   = 10      # number of infected individuals at t=0
+    beta            : float = 0.30    # S -> E   transmission / contact rate
+    sigma           : float = 0.20    # E -> I   incubation rate  (1/sigma = mean incubation days)
+    gamma           : float = 0.10    # I -> R   recovery rate (permanent immunity)
+    t_end           : float = 200.0   # simulation end time (days)
+    t_steps         : int   = 1_000   # number of equally-spaced time points
 
 
 @dataclass
 class SEPNSParams:
-    """Parameters for the SEPNS (Susceptible-Exposed-Positively Infected-
-    Negatively Infected-Susceptible) model.
+    """Parameters for the SEPNS (Susceptible-Exposed-Positively Infected-Negatively Infected-Susceptible) model.
 
     The infected state is split by the *sentiment* of the rumour being spread:
       P – individuals spreading misinformation with a positive tone.
       N – individuals spreading misinformation with a negative tone.
     Both P and N eventually return to S (no permanent immunity for social rumours).
-
-    Transition rates
-    ----------------
-    alpha : S  -> E   exposure / contact rate
-    beta1 : E  -> P   exposed adopts positive-sentiment spreading
-    beta2 : E  -> N   exposed adopts negative-sentiment spreading
-    mu1   : P  -> S   positive spreader loses interest / returns to susceptible
-    mu2   : N  -> S   negative spreader loses interest / returns to susceptible
-    mu_e  : E  -> S   exposed individual rejects information, returns to susceptible
     """
-    population          : int   = 10_000
-    initial_exposed     : int   = 0
-    initial_pos_infected: int   = 5
-    initial_neg_infected: int   = 5
-    alpha               : float = 0.20   # S -> E
-    beta1               : float = 0.15   # E -> P
-    beta2               : float = 0.20   # E -> N  (negative spreads faster)
-    mu1                 : float = 0.05   # P -> S
-    mu2                 : float = 0.05   # N -> S
-    mu_e                : float = 0.03   # E -> S  (rejection of information)
-    t_end               : float = 200.0
-    t_steps             : int   = 1_000
+    population          : int   = 10_000  # total number of individuals in the network
+    initial_exposed     : int   = 0       # number of exposed individuals at t=0
+    initial_pos_infected: int   = 5       # number of positive-sentiment spreaders at t=0
+    initial_neg_infected: int   = 5       # number of negative-sentiment spreaders at t=0
+    alpha               : float = 0.20    # S  -> E   exposure / contact rate
+    beta1               : float = 0.15    # E  -> P   exposed adopts positive-sentiment spreading
+    beta2               : float = 0.20    # E  -> N   exposed adopts negative-sentiment spreading (faster)
+    mu1                 : float = 0.05    # P  -> S   positive spreader loses interest, returns to susceptible
+    mu2                 : float = 0.05    # N  -> S   negative spreader loses interest, returns to susceptible
+    mu_e                : float = 0.03    # E  -> S   exposed individual rejects information early
+    t_end               : float = 200.0   # simulation end time (days)
+    t_steps             : int   = 1_000   # number of equally-spaced time points
 
 
 @dataclass
@@ -148,72 +147,49 @@ class SEDISParams:
     Adds a *Doubtful* (D) compartment: individuals who have heard the rumour but
     have not yet decided whether to believe or reject it.  Both D and I can cycle
     back to S because social-media rumours offer no permanent immunity.
-
-    Transition rates
-    ----------------
-    alpha : S -> E   exposure rate
-    beta1 : E -> D   exposed becomes sceptical / doubtful
-    beta2 : E -> I   exposed directly accepts and spreads
-    gamma : D -> I   doubtful is eventually convinced, starts spreading
-    mu1   : E -> S   exposed rejects information early
-    mu2   : D -> S   doubtful rejects after rechecking
-    mu3   : I -> S   spreader loses interest / information becomes stale
     """
-    population       : int   = 10_000
-    initial_exposed  : int   = 0
-    initial_doubtful : int   = 0
-    initial_infected : int   = 10
-    alpha            : float = 0.20   # S -> E
-    beta1            : float = 0.10   # E -> D
-    beta2            : float = 0.15   # E -> I
-    gamma            : float = 0.08   # D -> I
-    mu1              : float = 0.04   # E -> S
-    mu2              : float = 0.05   # D -> S
-    mu3              : float = 0.05   # I -> S
-    t_end            : float = 200.0
-    t_steps          : int   = 1_000
+    population       : int   = 10_000  # total number of individuals in the network
+    initial_exposed  : int   = 0       # number of exposed individuals at t=0
+    initial_doubtful : int   = 0       # number of doubtful individuals at t=0
+    initial_infected : int   = 10      # number of infected (spreading) individuals at t=0
+    alpha            : float = 0.20    # S  -> E   exposure rate
+    beta1            : float = 0.10    # E  -> D   exposed becomes sceptical / doubtful
+    beta2            : float = 0.15    # E  -> I   exposed directly accepts and spreads
+    gamma            : float = 0.08    # D  -> I   doubtful is eventually convinced, starts spreading
+    mu1              : float = 0.04    # E  -> S   exposed rejects information early
+    mu2              : float = 0.05    # D  -> S   doubtful rejects after rechecking
+    mu3              : float = 0.05    # I  -> S   spreader loses interest / information becomes stale
+    t_end            : float = 200.0   # simulation end time (days)
+    t_steps          : int   = 1_000   # number of equally-spaced time points
 
 
 @dataclass
 class SEDPNRParams:
-    """Parameters for the SEDPNR (Susceptible-Exposed-Doubtful-Positively Infected-
-    Negatively Infected-Restrained) model.
+    """Parameters for the SEDPNR (Susceptible-Exposed-Doubtful-Positively Infected-Negatively Infected-Restrained) model.
 
     The full misinformation-spread model proposed by Govindankutty & Gopalan (2024).
     It combines sentiment-aware infection (P/N split) with a Doubtful state and a
     terminal Restrained state (individuals who permanently stop spreading).
-
-    Transition rates  (see paper equations 5–10)
-    ----------------
-    alpha   : S  -> E   contact / exposure rate
-    beta1   : E  -> P   exposed adopts positive-sentiment spreading
-    beta2   : E  -> N   exposed adopts negative-sentiment spreading
-    beta3   : D  -> P   doubtful converted to positive spreader
-    beta4   : D  -> N   doubtful converted to negative spreader
-    gamma   : E  -> D   exposed becomes doubtful
-    lambda1 : P  -> R   positive spreader becomes restrained
-    lambda2 : N  -> R   negative spreader becomes restrained
-    mu1     : E  -> S   exposed rejects information, returns to susceptible
-    mu2     : D  -> S   doubtful rejects after verification
+    See paper equations 5–10.
     """
-    population          : int   = 10_000
-    initial_exposed     : int   = 10
-    initial_doubtful    : int   = 10
-    initial_pos_infected: int   = 5
-    initial_neg_infected: int   = 5
-    initial_restrained  : int   = 0
-    alpha               : float = 0.20   # S -> E
-    beta1               : float = 0.15   # E -> P
-    beta2               : float = 0.20   # E -> N
-    beta3               : float = 0.10   # D -> P
-    beta4               : float = 0.12   # D -> N
-    gamma               : float = 0.10   # E -> D
-    lambda1             : float = 0.05   # P -> R
-    lambda2             : float = 0.05   # N -> R
-    mu1                 : float = 0.03   # E -> S
-    mu2                 : float = 0.04   # D -> S
-    t_end               : float = 100.0
-    t_steps             : int   = 1_000
+    population          : int   = 10_000  # total number of individuals in the network
+    initial_exposed     : int   = 10      # number of exposed individuals at t=0
+    initial_doubtful    : int   = 10      # number of doubtful individuals at t=0
+    initial_pos_infected: int   = 5       # number of positive-sentiment spreaders at t=0
+    initial_neg_infected: int   = 5       # number of negative-sentiment spreaders at t=0
+    initial_restrained  : int   = 0       # number of restrained (silent) individuals at t=0
+    alpha               : float = 0.20    # S  -> E   contact / exposure rate
+    beta1               : float = 0.15    # E  -> P   exposed adopts positive-sentiment spreading
+    beta2               : float = 0.20    # E  -> N   exposed adopts negative-sentiment spreading
+    beta3               : float = 0.10    # D  -> P   doubtful converted to positive spreader
+    beta4               : float = 0.12    # D  -> N   doubtful converted to negative spreader
+    gamma               : float = 0.10    # E  -> D   exposed becomes doubtful
+    lambda1             : float = 0.05    # P  -> R   positive spreader becomes restrained
+    lambda2             : float = 0.05    # N  -> R   negative spreader becomes restrained
+    mu1                 : float = 0.03    # E  -> S   exposed rejects information, returns to susceptible
+    mu2                 : float = 0.04    # D  -> S   doubtful rejects after verification
+    t_end               : float = 100.0   # simulation end time (days)
+    t_steps             : int   = 1_000   # number of equally-spaced time points
 
 
 # ---------------------------------------------------------------------------
@@ -391,13 +367,7 @@ def _save_figure(fig: plt.Figure, model_name: str) -> None:
     fig.savefig(path, dpi=FIGURE_DPI, bbox_inches="tight")
 
 
-def _solve(
-    fun: Any,
-    y0: list[float],
-    t_end: float,
-    t_steps: int,
-    args: tuple,
-) -> tuple[np.ndarray, np.ndarray]:
+def _solve(fun: Any, y0: list[float], t_end: float, t_steps: int, args: tuple) -> tuple[np.ndarray, np.ndarray]:
     """Run solve_ivp (RK45) and return (time, states) as plain ndarrays."""
     t_eval: np.ndarray = np.linspace(0.0, t_end, t_steps)
     result: Any = solve_ivp(
@@ -408,7 +378,7 @@ def _solve(
 
 
 def _style_axes(ax: plt.Axes, title: str, t_end: float) -> None:
-    """Apply shared axes formatting.  Only the compartment legend is displayed."""
+    """Apply shared axes formatting. Only the compartment legend is displayed."""
     ax.set_title(title, fontsize=13, fontweight="bold", pad=10)
     ax.set_xlabel("Time (days)", fontsize=11)
     ax.set_ylabel("Number of individuals", fontsize=11)
@@ -421,17 +391,53 @@ def _style_axes(ax: plt.Axes, title: str, t_end: float) -> None:
 
 
 def _mark_peak(
-    ax: plt.Axes, t: np.ndarray, values: np.ndarray
+    ax: plt.Axes,
+    t: np.ndarray,
+    curve: np.ndarray,
 ) -> tuple[float, float]:
-    """Place a single red dot at the peak of *values*; return (peak_t, peak_v)."""
-    idx    = int(np.argmax(values))
+    """Place a red dot at the peak of *curve* and return (peak_t, peak_v).
+
+    The dot coordinates are taken directly from the *curve* array that was
+    passed to ax.plot(), so the marker always sits exactly on the line.
+    """
+    idx    = int(np.argmax(curve))
     peak_t = float(t[idx])
-    peak_v = float(values[idx])
+    peak_v = float(curve[idx])
     ax.scatter(peak_t, peak_v, color=PEAK_DOT_COLOR, s=PEAK_DOT_SIZE, zorder=5)
     return peak_t, peak_v
 
 
-def _plot_lines(ax: plt.Axes, t: np.ndarray, compartments: dict[str, np.ndarray]) -> None:
+def _dominant_infected_curve(
+    t: np.ndarray,
+    named_curves: dict[str, np.ndarray],
+    infected_keys: list[str],
+) -> tuple[str, np.ndarray]:
+    """Return the name and array of the infected compartment with the highest peak.
+
+    Parameters
+    ----------
+    named_curves    : mapping of compartment label -> values array (same order as plotted)
+    infected_keys   : subset of keys that represent infected compartments
+
+    The function finds which of the *infected_keys* compartments reaches the
+    highest value, and returns that (label, array) pair.  The peak dot is then
+    placed on that curve, guaranteeing it lies exactly on a plotted line.
+    """
+    best_label  = infected_keys[0]
+    best_peak   = float(np.max(named_curves[best_label]))
+    for key in infected_keys[1:]:
+        candidate = float(np.max(named_curves[key]))
+        if candidate > best_peak:
+            best_peak  = candidate
+            best_label = key
+    return best_label, named_curves[best_label]
+
+
+def _plot_lines(
+    ax: plt.Axes,
+    t: np.ndarray,
+    compartments: dict[str, np.ndarray],
+) -> None:
     """Draw one filled, labelled line per compartment."""
     for label, values in compartments.items():
         color = COLORS[label[0]]   # first letter maps to COLORS key (S/E/I/R/P/N/D)
@@ -458,10 +464,12 @@ def model_si(params: SIParams) -> plt.Figure:
     t, y = _solve(_si_ode, [S0, I0], params.t_end, params.t_steps, (params.beta, N))
     S, I = y
 
+    compartments = {"Susceptible": S, "Infected": I}
+
     fig, ax = plt.subplots(figsize=FIGURE_SIZE, dpi=FIGURE_DPI)
-    _plot_lines(ax, t, {"Susceptible": S, "Infected": I})
-    # SI infection only rises monotonically – peak is the final value
-    _mark_peak(ax, t, I)
+    _plot_lines(ax, t, compartments)
+    # SI infection rises monotonically; the peak is the final value.
+    peak_t, peak_v = _mark_peak(ax, t, compartments["Infected"])
 
     _style_axes(
         ax,
@@ -470,7 +478,7 @@ def model_si(params: SIParams) -> plt.Figure:
     )
     fig.tight_layout()
     _save_figure(fig, "SI")
-    print(f"  Final infected               : {float(I[-1]):,.0f} individuals")
+    print(f"  Final infected               : {peak_v:,.0f} individuals at day {peak_t:.1f}")
     print("  SI model simulation complete.")
     return fig
 
@@ -496,9 +504,11 @@ def model_sis(params: SISParams) -> plt.Figure:
     )
     S, I = y
 
+    compartments = {"Susceptible": S, "Infected": I}
+
     fig, ax = plt.subplots(figsize=FIGURE_SIZE, dpi=FIGURE_DPI)
-    _plot_lines(ax, t, {"Susceptible": S, "Infected": I})
-    peak_t, peak_v = _mark_peak(ax, t, I)
+    _plot_lines(ax, t, compartments)
+    peak_t, peak_v = _mark_peak(ax, t, compartments["Infected"])
 
     if r0 > 1.0:
         endemic_I = N * (1.0 - 1.0 / r0)
@@ -521,7 +531,7 @@ def model_sis(params: SISParams) -> plt.Figure:
 
 
 def model_sir(params: SIRParams) -> plt.Figure:
-    """Simulate and plot the SIR model (Kermack-McKendrick 1927)."""
+    """Simulate and plot the SIR model"""
     print("\n--- SIR Model ---")
     N      = float(params.population)
     I0     = float(params.initial_infected)
@@ -543,9 +553,11 @@ def model_sir(params: SIRParams) -> plt.Figure:
     )
     S, I, R = y
 
+    compartments = {"Susceptible": S, "Infected": I, "Recovered": R}
+
     fig, ax = plt.subplots(figsize=FIGURE_SIZE, dpi=FIGURE_DPI)
-    _plot_lines(ax, t, {"Susceptible": S, "Infected": I, "Recovered": R})
-    peak_t, peak_v = _mark_peak(ax, t, I)
+    _plot_lines(ax, t, compartments)
+    peak_t, peak_v = _mark_peak(ax, t, compartments["Infected"])
 
     _style_axes(
         ax,
@@ -584,9 +596,11 @@ def model_seir(params: SEIRParams) -> plt.Figure:
     )
     S, E, I, R = y
 
+    compartments = {"Susceptible": S, "Exposed": E, "Infected": I, "Recovered": R}
+
     fig, ax = plt.subplots(figsize=FIGURE_SIZE, dpi=FIGURE_DPI)
-    _plot_lines(ax, t, {"Susceptible": S, "Exposed": E, "Infected": I, "Recovered": R})
-    peak_t, peak_v = _mark_peak(ax, t, I)
+    _plot_lines(ax, t, compartments)
+    peak_t, peak_v = _mark_peak(ax, t, compartments["Infected"])
 
     _style_axes(
         ax,
@@ -640,16 +654,22 @@ def model_sepns(params: SEPNSParams) -> plt.Figure:
     )
     S, E, P, N_comp = y
 
-    total_spreaders = P + N_comp
-
-    fig, ax = plt.subplots(figsize=FIGURE_SIZE, dpi=FIGURE_DPI)
-    _plot_lines(ax, t, {
+    compartments = {
         "Susceptible"       : S,
         "Exposed"           : E,
         "Pos. Infected (P)" : P,
         "Neg. Infected (N)" : N_comp,
-    })
-    peak_t, peak_v = _mark_peak(ax, t, total_spreaders)
+    }
+
+    # Mark the peak on whichever infected curve (P or N) reaches its highest point.
+    _, peak_curve = _dominant_infected_curve(
+        t, compartments,
+        infected_keys=["Pos. Infected (P)", "Neg. Infected (N)"],
+    )
+
+    fig, ax = plt.subplots(figsize=FIGURE_SIZE, dpi=FIGURE_DPI)
+    _plot_lines(ax, t, compartments)
+    peak_t, peak_v = _mark_peak(ax, t, peak_curve)
 
     _style_axes(
         ax,
@@ -659,7 +679,7 @@ def model_sepns(params: SEPNSParams) -> plt.Figure:
     )
     fig.tight_layout()
     _save_figure(fig, "SEPNS")
-    print(f"  Peak total spreaders (P+N)   : {peak_v:,.0f} individuals at day {peak_t:.1f}")
+    print(f"  Peak spreader compartment    : {peak_v:,.0f} individuals at day {peak_t:.1f}")
     print("  SEPNS model simulation complete.")
     return fig
 
@@ -703,14 +723,16 @@ def model_sedis(params: SEDISParams) -> plt.Figure:
     )
     S, E, D, I = y
 
-    fig, ax = plt.subplots(figsize=FIGURE_SIZE, dpi=FIGURE_DPI)
-    _plot_lines(ax, t, {
+    compartments = {
         "Susceptible": S,
         "Exposed"    : E,
         "Doubtful"   : D,
         "Infected"   : I,
-    })
-    peak_t, peak_v = _mark_peak(ax, t, I)
+    }
+
+    fig, ax = plt.subplots(figsize=FIGURE_SIZE, dpi=FIGURE_DPI)
+    _plot_lines(ax, t, compartments)
+    peak_t, peak_v = _mark_peak(ax, t, compartments["Infected"])
 
     _style_axes(
         ax,
@@ -726,7 +748,7 @@ def model_sedis(params: SEDISParams) -> plt.Figure:
 
 
 def model_sedpnr(params: SEDPNRParams) -> plt.Figure:
-    """Simulate and plot the SEDPNR model (Govindankutty & Gopalan, 2024).
+    """Simulate and plot the SEDPNR model
 
     The most complete misinformation model in this suite:
       S  – Susceptible
@@ -736,7 +758,7 @@ def model_sedpnr(params: SEDPNRParams) -> plt.Figure:
       N  – Negatively Infected (spreading with negative sentiment)
       R  – Restrained (permanently stopped spreading)
 
-    R0 = max(beta1 / lambda1, beta2 / lambda2)  [paper equation 27].
+    R0 = max(beta1 / lambda1, beta2 / lambda2)
     """
     print("\n--- SEDPNR Model ---")
     N    = float(params.population)
@@ -777,18 +799,24 @@ def model_sedpnr(params: SEDPNRParams) -> plt.Figure:
     )
     S, E, D, P, N_comp, R = y
 
-    total_spreaders = P + N_comp
-
-    fig, ax = plt.subplots(figsize=FIGURE_SIZE, dpi=FIGURE_DPI)
-    _plot_lines(ax, t, {
+    compartments = {
         "Susceptible"       : S,
         "Exposed"           : E,
         "Doubtful"          : D,
         "Pos. Infected (P)" : P,
         "Neg. Infected (N)" : N_comp,
         "Restrained"        : R,
-    })
-    peak_t, peak_v = _mark_peak(ax, t, total_spreaders)
+    }
+
+    # Mark the peak on whichever infected curve (P or N) reaches its highest point.
+    _, peak_curve = _dominant_infected_curve(
+        t, compartments,
+        infected_keys=["Pos. Infected (P)", "Neg. Infected (N)"],
+    )
+
+    fig, ax = plt.subplots(figsize=FIGURE_SIZE, dpi=FIGURE_DPI)
+    _plot_lines(ax, t, compartments)
+    peak_t, peak_v = _mark_peak(ax, t, peak_curve)
 
     _style_axes(
         ax,
@@ -798,7 +826,7 @@ def model_sedpnr(params: SEDPNRParams) -> plt.Figure:
     )
     fig.tight_layout()
     _save_figure(fig, "SEDPNR")
-    print(f"  Peak total spreaders (P+N)           : {peak_v:,.0f} individuals at day {peak_t:.1f}")
+    print(f"  Peak spreader compartment            : {peak_v:,.0f} individuals at day {peak_t:.1f}")
     print("  SEDPNR model simulation complete.")
     return fig
 
@@ -813,93 +841,93 @@ def main() -> None:
     print("=" * 60)
 
     si_params = SIParams(
-        population       = 10_000,
-        initial_infected = 10,
-        beta             = 0.30,
-        t_end            = 60.0,
-        t_steps          = 1_000,
+        population       = 10_000,  # total network size
+        initial_infected = 10,      # seed infections at t=0
+        beta             = 0.30,    # S -> I   transmission rate
+        t_end            = 60.0,    # simulation end time (days)
+        t_steps          = 1_000,   # number of output time points
     )
 
     sis_params = SISParams(
-        population       = 10_000,
-        initial_infected = 10,
-        beta             = 0.30,
-        gamma            = 0.10,
-        t_end            = 120.0,
-        t_steps          = 1_000,
+        population       = 10_000,  # total network size
+        initial_infected = 10,      # seed infections at t=0
+        beta             = 0.30,    # S -> I   transmission rate
+        gamma            = 0.10,    # I -> S   recovery rate (no permanent immunity)
+        t_end            = 120.0,   # simulation end time (days)
+        t_steps          = 1_000,   # number of output time points
     )
 
     sir_params = SIRParams(
-        population        = 10_000,
-        initial_infected  = 10,
-        initial_recovered = 0,
-        beta              = 0.30,
-        gamma             = 0.10,
-        t_end             = 160.0,
-        t_steps           = 1_000,
+        population        = 10_000,  # total network size
+        initial_infected  = 10,      # seed infections at t=0
+        initial_recovered = 0,       # pre-immune individuals at t=0
+        beta              = 0.30,    # S -> I   transmission rate
+        gamma             = 0.10,    # I -> R   recovery rate (permanent immunity)
+        t_end             = 160.0,   # simulation end time (days)
+        t_steps           = 1_000,   # number of output time points
     )
 
     seir_params = SEIRParams(
-        population       = 10_000,
-        initial_exposed  = 0,
-        initial_infected = 10,
-        beta             = 0.30,
-        sigma            = 0.20,   # 1/sigma = mean incubation period (days)
-        gamma            = 0.10,
-        t_end            = 200.0,
-        t_steps          = 1_000,
+        population       = 10_000,  # total network size
+        initial_exposed  = 0,       # latent infections at t=0
+        initial_infected = 10,      # seed infections at t=0
+        beta             = 0.30,    # S -> E   transmission / contact rate
+        sigma            = 0.20,    # E -> I   incubation rate (1/sigma = mean incubation days)
+        gamma            = 0.10,    # I -> R   recovery rate (permanent immunity)
+        t_end            = 200.0,   # simulation end time (days)
+        t_steps          = 1_000,   # number of output time points
     )
 
     sepns_params = SEPNSParams(
-        population           = 10_000,
-        initial_exposed      = 0,
-        initial_pos_infected = 5,
-        initial_neg_infected = 5,
-        alpha                = 0.20,
-        beta1                = 0.15,
-        beta2                = 0.20,
-        mu1                  = 0.05,
-        mu2                  = 0.05,
-        mu_e                 = 0.03,
-        t_end                = 200.0,
-        t_steps              = 1_000,
+        population           = 10_000,  # total network size
+        initial_exposed      = 0,       # exposed individuals at t=0
+        initial_pos_infected = 5,       # positive-sentiment spreaders at t=0
+        initial_neg_infected = 5,       # negative-sentiment spreaders at t=0
+        alpha                = 0.20,    # S -> E   exposure / contact rate
+        beta1                = 0.15,    # E -> P   positive-sentiment adoption rate
+        beta2                = 0.20,    # E -> N   negative-sentiment adoption rate
+        mu1                  = 0.05,    # P -> S   positive spreader loses interest
+        mu2                  = 0.05,    # N -> S   negative spreader loses interest
+        mu_e                 = 0.03,    # E -> S   exposed individual rejects information early
+        t_end                = 200.0,   # simulation end time (days)
+        t_steps              = 1_000,   # number of output time points
     )
 
     sedis_params = SEDISParams(
-        population       = 10_000,
-        initial_exposed  = 0,
-        initial_doubtful = 0,
-        initial_infected = 10,
-        alpha            = 0.20,
-        beta1            = 0.10,
-        beta2            = 0.15,
-        gamma            = 0.08,
-        mu1              = 0.04,
-        mu2              = 0.05,
-        mu3              = 0.05,
-        t_end            = 200.0,
-        t_steps          = 1_000,
+        population       = 10_000,  # total network size
+        initial_exposed  = 0,       # exposed individuals at t=0
+        initial_doubtful = 0,       # doubtful individuals at t=0
+        initial_infected = 10,      # seed spreaders at t=0
+        alpha            = 0.20,    # S -> E   exposure rate
+        beta1            = 0.10,    # E -> D   exposed becomes doubtful
+        beta2            = 0.15,    # E -> I   exposed directly accepts and spreads
+        gamma            = 0.08,    # D -> I   doubtful individual becomes convinced
+        mu1              = 0.04,    # E -> S   exposed rejects information early
+        mu2              = 0.05,    # D -> S   doubtful rejects after verification
+        mu3              = 0.05,    # I -> S   spreader loses interest
+        t_end            = 200.0,   # simulation end time (days)
+        t_steps          = 1_000,   # number of output time points
     )
 
     sedpnr_params = SEDPNRParams(
-        population           = 10_000,
-        initial_exposed      = 10,
-        initial_doubtful     = 10,
-        initial_pos_infected = 5,
-        initial_neg_infected = 5,
-        initial_restrained   = 0,
-        alpha                = 0.20,
-        beta1                = 0.15,
-        beta2                = 0.20,
-        beta3                = 0.10,
-        beta4                = 0.12,
-        gamma                = 0.10,
-        lambda1              = 0.05,
-        lambda2              = 0.05,
-        mu1                  = 0.03,
-        mu2                  = 0.04,
-        t_end                = 100.0,
-        t_steps              = 1_000,
+        population           = 10_000,  # total network size
+        initial_exposed      = 10,      # exposed individuals at t=0
+        initial_doubtful     = 10,      # doubtful individuals at t=0
+        initial_pos_infected = 5,       # positive-sentiment spreaders at t=0
+        initial_neg_infected = 5,       # negative-sentiment spreaders at t=0
+        initial_restrained   = 0,       # restrained individuals at t=0
+        alpha                = 0.20,    # S -> E   contact / exposure rate
+        beta1                = 0.15,    # E -> P   exposed adopts positive-sentiment spreading
+        beta2                = 0.20,    # E -> N   exposed adopts negative-sentiment spreading
+        beta3                = 0.10,    # D -> P   doubtful converts to positive spreader
+        beta4                = 0.12,    # D -> N   doubtful converts to negative spreader
+        gamma                = 0.10,    # E -> D   exposed becomes doubtful
+        lambda1              = 0.05,    # P -> R   positive spreader becomes restrained
+        lambda2              = 0.05,    # N -> R   negative spreader becomes restrained
+        mu1                  = 0.03,    # E -> S   exposed rejects information
+        mu2                  = 0.04,    # D -> S   doubtful rejects after verification
+        t_end                = 100.0,   # simulation end time (days)
+        t_steps              = 1_000,   # number of output time points
     )
 
     model_si(si_params)
