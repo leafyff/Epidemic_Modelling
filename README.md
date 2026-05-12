@@ -4,9 +4,7 @@ A Python simulation project for comparing classical epidemic models and misinfor
 
 The project implements deterministic compartmental models using systems of ordinary differential equations. It includes traditional epidemic models such as SI, SIS, SIR, and SEIR, together with social-network misinformation models such as SEPNS, SEDIS, and SEDPNR.
 
-The project is based on the paper:
-
-**Sreeraag Govindankutty and Shynu Padinjappurath Gopalan, “Epidemic modeling for misinformation spread in digital networks through a social intelligence approach,” Scientific Reports, 2024.**
+The project is based on the paper **“Epidemic modeling for misinformation spread in digital networks through a social intelligence approach”** by Sreeraag Govindankutty and Shynu Padinjappurath Gopalan, published in *Scientific Reports* in 2024.
 
 DOI: https://doi.org/10.1038/s41598-024-69657-0
 
@@ -14,7 +12,7 @@ DOI: https://doi.org/10.1038/s41598-024-69657-0
 
 This repository studies how information, rumors, and misinformation can spread through a population by adapting epidemic-modeling ideas to digital networks.
 
-The social-network models represent user behavior such as exposure to misinformation, uncertainty, sentiment-based spreading, rejection after verification, and eventual disengagement from spreading.
+Traditional epidemic models describe how infection moves through biological populations. The social-network models in this project adapt that idea to misinformation spread by representing user states such as exposure, doubt, sentiment-based spreading, rejection after verification, and eventual restraint from further spreading.
 
 The simulations are implemented in `main.py`. Each model is solved with `scipy.integrate.solve_ivp` using the RK45 method and visualized with `matplotlib`. Generated plots are saved as PNG files in the `figs/` directory.
 
@@ -23,7 +21,7 @@ The simulations are implemented in `main.py`. Each model is solved with `scipy.i
 | Model | Full Name | Main Idea |
 |---|---|---|
 | SI | Susceptible, Infected | The simplest irreversible spread model. Susceptible individuals become infected, and infected individuals remain infected. |
-| SIS | Susceptible, Infected, Susceptible | Infected individuals can return to the susceptible state, so the spread can persist over time. |
+| SIS | Susceptible, Infected, Susceptible | Infected individuals can return to the susceptible state, so spread can persist over time. |
 | SIR | Susceptible, Infected, Recovered | Infected individuals recover into a permanently immune or removed state. |
 | SEIR | Susceptible, Exposed, Infected, Recovered | Adds a latent exposed state before individuals become infectious. |
 | SEPNS | Susceptible, Exposed, Positively Infected, Negatively Infected, Susceptible | Splits misinformation spreaders into positive-sentiment and negative-sentiment spreaders. |
@@ -98,68 +96,99 @@ The script runs all implemented models, prints the main parameters and peak-spre
 
 ## Output Figures
 
-| Model | Output File | Preview |
+In the equations below, `N_pop` denotes the total population. For models with a negatively infected compartment, `N_c` denotes the negatively infected compartment to avoid confusing it with the total population.
+
+| Model | Model's ODE | Preview |
 |---|---|---|
-| SI | `figs/SI_model_ex.png` | ![SI model result](figs/SI_model_ex.png) |
-| SIS | `figs/SIS_model_ex.png` | ![SIS model result](figs/SIS_model_ex.png) |
-| SIR | `figs/SIR_model_ex.png` | ![SIR model result](figs/SIR_model_ex.png) |
-| SEIR | `figs/SEIR_model_ex.png` | ![SEIR model result](figs/SEIR_model_ex.png) |
-| SEPNS | `figs/SEPNS_model_ex.png` | ![SEPNS model result](figs/SEPNS_model_ex.png) |
-| SEDIS | `figs/SEDIS_model_ex.png` | ![SEDIS model result](figs/SEDIS_model_ex.png) |
-| SEDPNR | `figs/SEDPNR_model_ex.png` | ![SEDPNR model result](figs/SEDPNR_model_ex.png) |
+| SI | $\frac{dS}{dt}=-\beta \frac{SI}{N_{pop}}$<br>$\frac{dI}{dt}=\beta \frac{SI}{N_{pop}}$ | ![SI model result](figs/SI_model_ex.png) |
+| SIS | $\frac{dS}{dt}=-\beta \frac{SI}{N_{pop}}+\gamma I$<br>$\frac{dI}{dt}=\beta \frac{SI}{N_{pop}}-\gamma I$ | ![SIS model result](figs/SIS_model_ex.png) |
+| SIR | $\frac{dS}{dt}=-\beta \frac{SI}{N_{pop}}$<br>$\frac{dI}{dt}=\beta \frac{SI}{N_{pop}}-\gamma I$<br>$\frac{dR}{dt}=\gamma I$ | ![SIR model result](figs/SIR_model_ex.png) |
+| SEIR | $\frac{dS}{dt}=-\beta \frac{SI}{N_{pop}}$<br>$\frac{dE}{dt}=\beta \frac{SI}{N_{pop}}-\sigma E$<br>$\frac{dI}{dt}=\sigma E-\gamma I$<br>$\frac{dR}{dt}=\gamma I$ | ![SEIR model result](figs/SEIR_model_ex.png) |
+| SEPNS | $\frac{dS}{dt}=-\alpha \frac{S(P+N_c)}{N_{pop}}+\mu_1P+\mu_2N_c+\mu_eE$<br>$\frac{dE}{dt}=\alpha \frac{S(P+N_c)}{N_{pop}}-(\beta_1+\beta_2+\mu_e)E$<br>$\frac{dP}{dt}=\beta_1E-\mu_1P$<br>$\frac{dN_c}{dt}=\beta_2E-\mu_2N_c$ | ![SEPNS model result](figs/SEPNS_model_ex.png) |
+| SEDIS | $\frac{dS}{dt}=-\alpha \frac{SI}{N_{pop}}+\mu_1E+\mu_2D+\mu_3I$<br>$\frac{dE}{dt}=\alpha \frac{SI}{N_{pop}}-(\beta_1+\beta_2+\mu_1)E$<br>$\frac{dD}{dt}=\beta_1E-(\gamma+\mu_2)D$<br>$\frac{dI}{dt}=\beta_2E+\gamma D-\mu_3I$ | ![SEDIS model result](figs/SEDIS_model_ex.png) |
+| SEDPNR | $\frac{dS}{dt}=\mu_1E+\mu_2D-\alpha S$<br>$\frac{dE}{dt}=\alpha S-(\beta_1+\beta_2+\gamma+\mu_1)E$<br>$\frac{dD}{dt}=\gamma E-(\beta_3+\beta_4+\mu_2)D$<br>$\frac{dP}{dt}=\beta_1E+\beta_3D-\lambda_1P$<br>$\frac{dN_c}{dt}=\beta_2E+\beta_4D-\lambda_2N_c$<br>$\frac{dR}{dt}=\lambda_1P+\lambda_2N_c$ | ![SEDPNR model result](figs/SEDPNR_model_ex.png) |
 
 ## Model Descriptions
 
 ### SI Model
 
-The SI model divides the population into susceptible and infected individuals. Once an individual becomes infected, they remain infected. This model is useful as a baseline for irreversible information spread.
+SI means **Susceptible, Infected**.
 
-The transmission rate `beta` controls how quickly susceptible individuals become infected.
+`S` represents susceptible individuals who have not yet adopted or received the spreading item. `I` represents infected individuals who are currently carrying or spreading it.
+
+This is the simplest model in the project. Susceptible individuals become infected through contact with infected individuals. The model has no recovery, removal, doubt, immunity, or restraint state. Once an individual moves from `S` to `I`, that individual remains infected for the rest of the simulation.
+
+In the context of information spread, this model represents an extreme baseline where exposure leads to permanent adoption or permanent spreading. Because this assumption is too strong for real misinformation behavior, the SI model is mainly useful as a comparison point for more realistic models.
 
 ### SIS Model
 
-The SIS model allows infected individuals to return to the susceptible state. This is useful for processes where there is no permanent immunity or permanent disengagement.
+SIS means **Susceptible, Infected, Susceptible**.
 
-In this implementation, `beta` controls transmission and `gamma` controls the transition from infected back to susceptible.
+The first `S` represents susceptible individuals. `I` represents infected individuals. The final `S` represents the return of infected individuals back to the susceptible state.
+
+The SIS model adds recovery without permanent immunity. Infected individuals can stop spreading and return to the susceptible pool. Since they do not become permanently immune or permanently restrained, they may become infected again later.
+
+In this implementation, `beta` controls the transition from `S` to `I`, and `gamma` controls the transition from `I` back to `S`. When the transmission rate is sufficiently larger than the recovery rate, the infection can persist as an endemic state instead of disappearing completely.
+
+For misinformation, SIS can represent repeated exposure to similar claims where users may stop spreading a claim but remain vulnerable to accepting or resharing it again later.
 
 ### SIR Model
 
-The SIR model adds a recovered compartment. Infected individuals recover and move into a state where they no longer participate in the spread.
+SIR means **Susceptible, Infected, Recovered**.
 
-In this implementation, `beta` controls transmission and `gamma` controls recovery.
+`S` represents susceptible individuals. `I` represents infected individuals. `R` represents recovered individuals who no longer participate in the spread.
+
+The SIR model adds a permanently removed or immune state. Once infected individuals recover, they move to `R` and do not return to the susceptible state. This is a standard classical epidemic model and is useful for comparison with social-network misinformation models.
+
+In this implementation, `beta` controls infection, and `gamma` controls recovery. The ratio `beta / gamma` is used as the basic reproduction number for the classical SIR dynamics.
+
+For misinformation, the recovered state can be interpreted as users who have stopped spreading and are no longer susceptible to the same item. This is a stronger assumption than many social-network situations allow, because users can often become susceptible again when a rumor resurfaces, changes form, or receives social reinforcement.
 
 ### SEIR Model
 
-The SEIR model adds an exposed compartment between susceptible and infected. Exposed individuals have encountered the spreading item and later transition into the infected state.
+SEIR means **Susceptible, Exposed, Infected, Recovered**.
 
-In this implementation, `beta` controls exposure, `sigma` controls the transition from exposed to infected, and `gamma` controls recovery.
+`S` represents susceptible individuals. `E` represents exposed individuals who have encountered the spreading item but are not yet actively spreading it. `I` represents infected individuals who are actively spreading. `R` represents recovered individuals who are removed from the spreading process.
+
+The SEIR model adds a latent stage between susceptibility and infection. This makes it more realistic than SIR for processes where exposure does not immediately create active spreading. In biological epidemic modeling, `E` often represents infected but not yet infectious individuals. In information-spread modeling, `E` can represent users who have seen the content but have not yet decided whether to spread it.
+
+In this implementation, `beta` controls movement from `S` to `E`, `sigma` controls movement from `E` to `I`, and `gamma` controls movement from `I` to `R`. The mean exposed-stage duration is represented by `1 / sigma`.
 
 ### SEPNS Model
 
-The SEPNS model adapts epidemic modeling to social-network misinformation spread by splitting infected users into two sentiment-based groups.
+SEPNS means **Susceptible, Exposed, Positively Infected, Negatively Infected, Susceptible**.
 
-Positive spreaders share misinformation with a positive or approving tone. Negative spreaders share misinformation with a negative, critical, or emotionally reactive tone. Both groups can return to the susceptible state because rumor-specific social spreading does not imply permanent immunity.
+`S` represents susceptible individuals. `E` represents exposed individuals. `P` represents positively infected individuals who spread misinformation with a positive or approving sentiment. `N` represents negatively infected individuals who spread misinformation with a negative, distrustful, critical, or emotionally reactive sentiment. The final `S` represents the return of spreaders back to susceptibility.
+
+The SEPNS model adapts epidemic modeling to social-network rumor propagation by splitting the infected state according to sentiment. This is useful because misinformation is often not spread in a neutral way. Users may share the same false claim approvingly, fearfully, angrily, or critically, and those emotional tones can affect how the content propagates.
+
+In this implementation, susceptible users move to the exposed state through contact with positive and negative spreaders. Exposed users may become positive spreaders, become negative spreaders, or reject the information and return to `S`. Positive and negative spreaders can lose interest and return to the susceptible state.
+
+This model is useful when sentiment matters but a separate doubtful or restrained state is not required.
 
 ### SEDIS Model
 
-The SEDIS model introduces a doubtful compartment. This state represents users who have encountered misinformation and are deciding whether to believe, reject, or spread it.
+SEDIS means **Susceptible, Exposed, Doubtful, Infected, Susceptible**.
 
-This model is useful for representing skepticism, verification behavior, and delayed decision-making in online information diffusion.
+`S` represents susceptible individuals. `E` represents exposed individuals who have encountered the misinformation. `D` represents doubtful individuals who are uncertain, skeptical, or checking the information. `I` represents infected individuals who accept and spread the misinformation. The final `S` represents the return of exposed, doubtful, or infected users back to susceptibility.
+
+The SEDIS model adds a human-selection component through the doubtful state. This is important for misinformation modeling because users do not always accept or spread information immediately after exposure. Some users pause, question the content, compare it with other sources, or wait for more confirmation.
+
+In this implementation, susceptible users become exposed through contact with infected users. Exposed users may become doubtful, directly become infected, or reject the information and return to susceptible. Doubtful users may eventually become infected after further exposure or persuasion, or they may reject the misinformation and return to susceptible. Infected users eventually lose interest or stop spreading and return to susceptible.
+
+This model is more realistic than simple epidemic models for social-media rumor spread because it includes uncertainty and delayed belief formation.
 
 ### SEDPNR Model
 
-The SEDPNR model is the most complete misinformation-spread model in this project.
+SEDPNR means **Susceptible, Exposed, Doubtful, Positively Infected, Negatively Infected, Restrained**.
 
-| Symbol | Compartment | Meaning |
-|---|---|---|
-| `S` | Susceptible | Users who have not adopted or engaged with the misinformation yet |
-| `E` | Exposed | Users who have encountered the misinformation |
-| `D` | Doubtful | Users who are skeptical or verifying the information |
-| `P` | Positively Infected | Users spreading the misinformation with positive sentiment |
-| `N` | Negatively Infected | Users spreading the misinformation with negative sentiment |
-| `R` | Restrained | Users who have stopped spreading the misinformation |
+`S` represents susceptible individuals who have not adopted or engaged with the misinformation. `E` represents exposed individuals who have encountered the misinformation. `D` represents doubtful individuals who are skeptical, uncertain, or verifying the information. `P` represents positively infected users who spread the misinformation with positive sentiment. `N` represents negatively infected users who spread it with negative sentiment. `R` represents restrained users who have stopped spreading the misinformation.
 
-The model captures initial exposure, doubt, sentiment-based spreading, rejection after verification, and eventual restraint.
+The SEDPNR model is the most complete misinformation-spread model in this project. It combines the exposed and doubtful states with sentiment-aware spreading and a terminal restrained state. In this model, `R` means **Restrained**, not **Recovered**. This distinction matters because the model is intended for misinformation spread, where users may stop spreading because the topic becomes stale, because they verify the information, because they lose interest, or because interventions reduce further sharing.
+
+In this implementation, susceptible users move to exposed at rate `alpha`. Exposed users may become positively infected, negatively infected, doubtful, or return to susceptible. Doubtful users may become positively or negatively infected, or they may return to susceptible after verification or loss of interest. Positive and negative spreaders eventually become restrained.
+
+The article presents SEDPNR as a model for misinformation in digital networks that accounts for social intelligence, sentiment, doubt, and restraint. Compared with SIR and SEIR, SEDPNR is focused less on biological infection and more on user psychology, social influence, belief state, and sharing behavior.
 
 ## Default Simulation Parameters
 
@@ -230,19 +259,9 @@ The generated curves show compartment-level dynamics under the chosen parameters
 
 The plots provide qualitative model behavior rather than calibrated predictions for a specific real-world social network. Operational use would require empirical calibration, platform-specific assumptions, network topology, user-behavior data, and validation.
 
-## Reference
+## References
 
-```bibtex
-@article{govindankutty2024epidemic,
-  title   = {Epidemic modeling for misinformation spread in digital networks through a social intelligence approach},
-  author  = {Govindankutty, Sreeraag and Gopalan, Shynu Padinjappurath},
-  journal = {Scientific Reports},
-  volume  = {14},
-  article = {19100},
-  year    = {2024},
-  doi     = {10.1038/s41598-024-69657-0}
-}
-```
+Govindankutty, S., & Gopalan, S. P. (2024). Epidemic modeling for misinformation spread in digital networks through a social intelligence approach. *Scientific Reports, 14*, Article 19100. https://doi.org/10.1038/s41598-024-69657-0
 
 ## License
 
