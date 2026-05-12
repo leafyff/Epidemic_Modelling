@@ -24,6 +24,40 @@ The simulations are implemented in `main.py`. Each model is solved with `scipy.i
 | SEDIS | Susceptible, Exposed, Doubtful, Infected, Susceptible | Adds a doubtful state for users who question the information before accepting, rejecting, or spreading it. | $\Large\frac{dS}{dt} = \mu_1 E + \mu_2 D + \mu_3 I - \alpha S$ <br> $\Large\frac{dE}{dt} = \alpha S - (\beta_1 + \beta_2 + \mu_1) E$ <br> $\Large\frac{dD}{dt} = \beta_1 E - (\gamma + \mu_2) D$ <br> $\Large\frac{dI}{dt} = \gamma D + \beta_2 E - \mu_3 I$ |
 | SEDPNR | Susceptible, Exposed, Doubtful, Positively Infected, Negatively Infected, Restrained | Combines doubt, sentiment-aware misinformation spreading, and a restrained state for users who permanently stop spreading the misinformation. | $\Large\frac{dS}{dt} = \mu_1 E + \mu_2 D - \alpha S$ <br> $\Large\frac{dE}{dt} = \alpha S - (\beta_1 + \beta_2 + \gamma + \mu_1) E$ <br> $\Large\frac{dD}{dt} = \gamma E - (\beta_3 + \beta_4 + \mu_2) D$ <br> $\Large\frac{dP}{dt} = \beta_1 E + \beta_3 D - \lambda_1 P$ <br> $\Large\frac{dN}{dt} = \beta_2 E + \beta_4 D - \lambda_2 N$ <br> $\Large\frac{dR}{dt} = \lambda_1 P + \lambda_2 N$ |
 
+**Compartments (state variables):**
+
+* $S$ — number of susceptible individuals (can still be infected/influenced)
+* $E$ — number of exposed individuals (have encountered the information but are not yet active spreaders)
+* $I$ — number of infected / actively spreading individuals
+* $R$ — number of recovered (immune or removed) individuals
+* $D$ — number of doubtful individuals (questioning the information before deciding)
+* $P$ — number of positively-infected spreaders (spread with positive sentiment)
+* $N$ — number of negatively-infected spreaders (spread with negative sentiment)
+* $n$ — total (initial) population size, $n = S + E + I + \dots$
+
+**Transmission / contact parameters:**
+
+* $\beta$ — infection (transmission) rate from $S$ to $I$ in classic SI/SIS/SIR/SEIR models
+* $\alpha$ — contact rate at which susceptibles become exposed in SEPNS/SEDIS/SEDPNR
+
+**Progression parameters (out of $E$ and $D$):**
+
+* $\sigma$ — rate at which exposed individuals become infectious (SEIR)
+* $\beta_1$ — transition rate from $E$ to the next state (to $P$ in SEPNS/SEDPNR, to $D$ in SEDIS)
+* $\beta_2$ — transition rate from $E$ to the next state (to $N$ in SEPNS/SEDPNR, to $I$ in SEDIS)
+* $\gamma$ — recovery / progression rate (from $I$ to $R$ in SIR/SEIR; from $D$ to $I$ in SEDIS; from $E$ to $D$ in SEDPNR)
+* $\beta_3$ — transition rate from $D$ to $P$ (SEDPNR)
+* $\beta_4$ — transition rate from $D$ to $N$ (SEDPNR)
+
+**Return / removal parameters:**
+
+* $\mu_e$ — rate at which exposed individuals return to susceptible (SEPNS)
+* $\mu_1$ — return-to-susceptible rate (from $P$ in SEPNS; from $E$ in SEDIS/SEDPNR)
+* $\mu_2$ — return-to-susceptible rate (from $N$ in SEPNS; from $D$ in SEDIS/SEDPNR)
+* $\mu_3$ — return-to-susceptible rate from $I$ (SEDIS)
+* $\lambda_1$ — rate at which positively-infected spreaders move to the restrained state $R$ (SEDPNR)
+* $\lambda_2$ — rate at which negatively-infected spreaders move to the restrained state $R$ (SEDPNR)
+
 
 ## Project Structure
 
