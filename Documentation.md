@@ -14,6 +14,7 @@ and that `numpy`, `scipy` and `matplotlib` are installed
 ├── main.py             # Console entry point (argparse-based CLI)
 ├── drawing.py          # Figure constants + plotting / solver helpers
 ├── sampling.py         # Library: create_sample(params, filename, n_points)
+├── estimation.py       # Library: forward-Euler least-squares parameter estimation
 ├── models/             # One file per epidemic model — each fully self-contained
 │   ├── __init__.py     # Re-exports every *Params, *_ode and model_*
 │   ├── SI.py
@@ -55,6 +56,7 @@ python main.py <command> [options]
 | `run-all` | Run every model with default parameters. |
 | `run <MODEL>` | Run a single model. |
 | `sample <MODEL> <FILENAME>` | Run a model and save its time series as JSON. |
+| `find-parameters <SAMPLE>` | Estimate the discrete-model rate parameters from a JSON sample via least squares (alias: `find_parameters`). |
 
 `<MODEL>` is case-insensitive and one of:
 `SI`, `SIS`, `SIR`, `SEIR`, `SEPNS`, `SEDIS`, `SEDPNR`.
@@ -157,6 +159,67 @@ JSON files are written to `samples/<FILENAME>`. The layout is:
 
 `n_points` controls the resolution of `time` and the compartment arrays for
 that one sample; it does **not** mutate the dataclass's own `t_steps`.
+
+---
+
+## Examples: estimating parameters from a sample (`find-parameters`)
+
+`find-parameters` reads a JSON sample, applies the **forward-Euler**
+discretization of the model's ODE system, and solves the resulting
+over-determined linear system in the least-squares sense (numpy's
+`linalg.lstsq`) to recover the rate parameters.
+
+End-to-end example using the SIR sample from the project brief
+(β = 0.4, γ = 0.2):
+
+```bash
+# 1) generate the test sample
+python main.py sample SIR SIR_sample1.json --param beta=0.4 --param gamma=0.2
+
+# 2) recover the parameters
+python main.py find-parameters SIR_sample1.json
+```
+
+Expected output (truncated):
+
+```text
+--- Parameter estimation: SIR ---
+  Source file                  : samples\SIR_sample1.json
+  Number of points             : 1000
+  Step size dt                 : 0.160160
+
+  Parameter       Estimated           True     Abs. error   Rel. error
+  beta             0.399424       0.400000     5.7568e-04        0.14%
+  gamma            0.200287       0.200000     2.8750e-04        0.14%
+  Residual RMSE                : 9.7588e-01
+```
+
+The `find-parameters` argument accepts either a bare filename (resolved
+against `samples/`) or an absolute / relative path to a JSON file. The
+underscore alias `find_parameters` is also accepted:
+
+```bash
+python main.py find-parameters SIR_sample1.json
+python main.py find_parameters samples/SIR_sample1.json
+python main.py find-parameters /absolute/path/to/sample.json
+```
+
+### Why estimates differ slightly from the true rates
+
+The samples are produced by SciPy's RK45 (a high-order method) applied to
+the *continuous* ODE.  `find-parameters` fits the *forward-Euler*
+discretization to the same trajectory.  The recovered rates are therefore
+those of the discrete model that best reproduces the sampled trajectory,
+which differ from the continuous-model rates by an amount proportional to
+`dt` and the local curvature of the solution.  Increasing `--n-points`
+when you generate the sample shrinks this gap; decreasing it widens it.
+
+### Currently supported models
+
+| Model | Status |
+|---|---|
+| SIR | Supported |
+| SI / SIS / SEIR / SEPNS / SEDIS / SEDPNR | Not yet — add a builder to `estimation._BUILDERS` to extend. |
 
 ---
 

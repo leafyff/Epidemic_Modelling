@@ -15,12 +15,14 @@ repeatable, where ``KEY`` is any field of the model's ``*Params`` dataclass.
 """
 
 import argparse
+import os
 import sys
 from dataclasses import fields
 from typing import Any, get_type_hints
 
 import matplotlib.pyplot as plt
 
+from estimation import find_parameters
 from models import (
     SEDISParams,
     SEDPNRParams,
@@ -37,7 +39,7 @@ from models import (
     model_sir,
     model_sis,
 )
-from sampling import DEFAULT_N_POINTS, create_sample
+from sampling import DEFAULT_N_POINTS, SAMPLES_DIR, create_sample
 
 MODEL_REGISTRY: dict[str, tuple[Any, Any]] = {
     "SI"    : (SIParams,     model_si),
@@ -129,6 +131,23 @@ def cmd_sample(args: argparse.Namespace) -> None:
     create_sample(params, args.filename, n_points=args.n_points)
 
 
+def _resolve_sample_path(name: str) -> str:
+    """Accept either a bare filename (looked up in samples/) or a real path."""
+    if os.path.exists(name):
+        return name
+    candidate = os.path.join(SAMPLES_DIR, name)
+    if os.path.exists(candidate):
+        return candidate
+    sys.exit(
+        f"error: sample file {name!r} not found "
+        f"(looked at {name!r} and {candidate!r})"
+    )
+
+
+def cmd_find_parameters(args: argparse.Namespace) -> None:
+    find_parameters(_resolve_sample_path(args.sample))
+
+
 # ---------------------------------------------------------------------------
 # Argument parser
 # ---------------------------------------------------------------------------
@@ -187,6 +206,18 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_sample.add_argument("--param", action="append", default=[], help=param_help)
     p_sample.set_defaults(func=cmd_sample)
+
+    # find-parameters ------------------------------------------------------
+    p_find = sub.add_parser(
+        "find-parameters",
+        aliases=["find_parameters"],
+        help="Estimate discrete-model rates from a JSON sample (least squares).",
+    )
+    p_find.add_argument(
+        "sample",
+        help="Sample filename in samples/, or a path to a JSON sample.",
+    )
+    p_find.set_defaults(func=cmd_find_parameters)
 
     return parser
 
