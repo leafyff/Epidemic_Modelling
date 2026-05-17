@@ -21,12 +21,21 @@ matplotlib.  Plots are written to the ``figs/`` directory next to this file.
 1.  Project layout
 --------------------------------------------------------------------------------
 
-    main.py        – this file; usage docs + default scenario runner
-    constants.py   – figure / colour / output-path constants
-    params.py      – one dataclass per model holding its parameters
-    odes.py        – right-hand-side functions for every model's ODE system
-    plotting.py    – solver wrapper, axis styling, peak marker, save-to-PNG
-    models.py      – model_si, model_sis, …, model_sedpnr public functions
+    main.py             – this file; usage docs + default scenario runner
+    drawing.py          – ALL drawing tools: figure constants, colour palette,
+                          solver wrapper, axis styling, peak marker, save-to-PNG
+    models/             – one file per epidemic model, each fully self-contained
+                          (parameter dataclass + ODE function + simulation
+                          function + a complete written description of the
+                          model in the module docstring)
+        __init__.py     – re-exports every Params/ode/model_* symbol
+        SI.py           – SI model
+        SIS.py          – SIS model
+        SIR.py          – SIR model
+        SEIR.py         – SEIR model
+        SEPNS.py        – SEPNS rumour model (sentiment split)
+        SEDIS.py        – SEDIS rumour model (Doubtful compartment)
+        SEDPNR.py       – SEDPNR rumour model (full Govindankutty & Gopalan 2024)
 
 --------------------------------------------------------------------------------
 2.  Requirements
@@ -52,10 +61,13 @@ matplotlib window with every figure.
 --------------------------------------------------------------------------------
 
 Edit ``main()`` below to change parameters, or import the project from your
-own script:
+own script.  Either of the two import styles works:
 
-    from params import SIRParams
-    from models import model_sir
+    # short form via the package's re-exports
+    from models import SIRParams, model_sir
+
+    # long form direct from the model's own file
+    from models.SIR import SIRParams, model_sir
 
     custom = SIRParams(
         population        = 50_000,
@@ -64,13 +76,13 @@ own script:
         gamma             = 0.12,
         t_end             = 180.0,
     )
-    fig = model_sir(custom)   # solves, prints a summary, saves figs/SIR_model_ex.png
+    fig = model_sir(custom)   # solves, prints summary, saves figs/SIR_model_ex.png
     fig.show()
 
-Every model follows the same pattern: import its ``*Params`` dataclass from
-``params``, import its ``model_*`` function from ``models``, instantiate the
-params, and call the function.  The returned object is a ``matplotlib.figure.Figure``
-that you can further customise before display.
+Every model follows the same pattern: import its ``*Params`` dataclass and
+``model_*`` function, instantiate the params, and call the function.  The
+returned object is a ``matplotlib.figure.Figure`` you can customise further
+before display.
 
 --------------------------------------------------------------------------------
 5.  Running a single model
@@ -79,21 +91,21 @@ that you can further customise before display.
 Comment out the model calls you do not want in ``main()``, or write a tiny
 driver script as shown in section 4.
 
+--------------------------------------------------------------------------------
+6.  Where to read the model theory
+--------------------------------------------------------------------------------
+
+Each file under ``models/`` starts with a long module docstring covering
+the compartments, governing ODEs, parameter meanings, R0 / threshold
+behaviour and typical use cases for that model.  Open the file directly
+(e.g. ``models/SEDPNR.py``) to read the full description.
+
 ================================================================================
 """
 
 import matplotlib.pyplot as plt
 
 from models import (
-    model_sedis,
-    model_sedpnr,
-    model_seir,
-    model_sepns,
-    model_si,
-    model_sir,
-    model_sis,
-)
-from params import (
     SEDISParams,
     SEDPNRParams,
     SEIRParams,
@@ -101,6 +113,13 @@ from params import (
     SIParams,
     SIRParams,
     SISParams,
+    model_sedis,
+    model_sedpnr,
+    model_seir,
+    model_sepns,
+    model_si,
+    model_sir,
+    model_sis,
 )
 
 
