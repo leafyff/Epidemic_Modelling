@@ -205,7 +205,7 @@ def model_sedpnr(params: SEDPNRParams) -> plt.Figure:
 
     # Mark the peak on whichever infected curve (P or N) reaches its highest point.
     _, peak_curve = dominant_infected_curve(
-        t, compartments,
+        compartments,
         infected_keys=["Pos. Infected (P)", "Neg. Infected (N)"],
     )
 

@@ -10,19 +10,65 @@ This repository studies how information, rumors, and misinformation can spread t
 
 The social-network models represent user behavior such as exposure to misinformation, uncertainty, sentiment-based spreading, rejection after verification, and eventual disengagement from spreading.
 
-The simulations are implemented in `main.py`. Each model is solved with `scipy.integrate.solve_ivp` using the RK45 method and visualized with `matplotlib`. Generated plots are saved as PNG files in the `figs/` directory.
+The simulator is a console application: `main.py` is an argparse-based CLI that drives the rest of the codebase. Each model is solved with `scipy.integrate.solve_ivp` using the RK45 method and visualized with `matplotlib`. Generated plots are saved as PNG files in the `figs/` directory, and JSON samples (for downstream analysis) are saved in the `samples/` directory.
 
 ## Implemented Models
 
-| Model | Full Name | Main Idea | Model's ODE |
-|---|---|---|---|
-| SI | Susceptible, Infected | The simplest irreversible spread model. Susceptible individuals become infected, and infected individuals remain infected. | $\Large\frac{dS}{dt} = -\frac{\beta S I}{n}$ <br> $\Large\frac{dI}{dt} = \frac{\beta S I}{n}$ |
-| SIS | Susceptible, Infected, Susceptible | Infected individuals can return to the susceptible state, so the spread can persist over time. | $\Large\frac{dS}{dt} = -\frac{\beta S I}{n} + \gamma I$ <br> $\Large\frac{dI}{dt} = \frac{\beta S I}{n} - \gamma I$ |
-| SIR | Susceptible, Infected, Recovered | Infected individuals recover into a permanently immune or removed state. | $\Large\frac{dS}{dt} = -\frac{\beta S I}{n}$ <br> $\Large\frac{dI}{dt} = \frac{\beta S I}{n} - \gamma I$ <br> $\Large\frac{dR}{dt} = \gamma I$ |
-| SEIR | Susceptible, Exposed, Infected, Recovered | Adds a latent exposed state before individuals become infectious. | $\Large\frac{dS}{dt} = -\frac{\beta S I}{n}$ <br> $\Large\frac{dE}{dt} = \frac{\beta S I}{n} - \sigma E$ <br> $\Large\frac{dI}{dt} = \sigma E - \gamma I$ <br> $\Large\frac{dR}{dt} = \gamma I$ |
-| SEPNS | Susceptible, Exposed, Positively Infected, Negatively Infected, Susceptible | Splits misinformation spreaders into positive-sentiment and negative-sentiment spreaders. | $\Large\frac{dS}{dt} = -\frac{\alpha S (P + N)}{n} + \mu_1 P + \mu_2 N + \mu_e E$ <br> $\Large\frac{dE}{dt} = \frac{\alpha S (P + N)}{n} - (\beta_1 + \beta_2 + \mu_e) E$ <br> $\Large\frac{dP}{dt} = \beta_1 E - \mu_1 P$ <br> $\Large\frac{dN}{dt} = \beta_2 E - \mu_2 N$ |
-| SEDIS | Susceptible, Exposed, Doubtful, Infected, Susceptible | Adds a doubtful state for users who question the information before accepting, rejecting, or spreading it. | $\Large\frac{dS}{dt} = \mu_1 E + \mu_2 D + \mu_3 I - \alpha S$ <br> $\Large\frac{dE}{dt} = \alpha S - (\beta_1 + \beta_2 + \mu_1) E$ <br> $\Large\frac{dD}{dt} = \beta_1 E - (\gamma + \mu_2) D$ <br> $\Large\frac{dI}{dt} = \gamma D + \beta_2 E - \mu_3 I$ |
-| SEDPNR | Susceptible, Exposed, Doubtful, Positively Infected, Negatively Infected, Restrained | Combines doubt, sentiment-aware misinformation spreading, and a restrained state for users who permanently stop spreading the misinformation. | $\Large\frac{dS}{dt} = \mu_1 E + \mu_2 D - \alpha S$ <br> $\Large\frac{dE}{dt} = \alpha S - (\beta_1 + \beta_2 + \gamma + \mu_1) E$ <br> $\Large\frac{dD}{dt} = \gamma E - (\beta_3 + \beta_4 + \mu_2) D$ <br> $\Large\frac{dP}{dt} = \beta_1 E + \beta_3 D - \lambda_1 P$ <br> $\Large\frac{dN}{dt} = \beta_2 E + \beta_4 D - \lambda_2 N$ <br> $\Large\frac{dR}{dt} = \lambda_1 P + \lambda_2 N$ |
+| Model  | Full Name                                                                        | Main Idea                                                                                                                |
+| ------ | -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| SI     | Susceptible, Infected                                                            | The simplest irreversible spread model. Susceptible individuals become infected, and infected individuals remain infected. |
+| SIS    | Susceptible, Infected, Susceptible                                               | Infected individuals can return to the susceptible state, so the spread can persist over time.                           |
+| SIR    | Susceptible, Infected, Recovered                                                 | Infected individuals recover into a permanently immune or removed state.                                                 |
+| SEIR   | Susceptible, Exposed, Infected, Recovered                                        | Adds a latent exposed state before individuals become infectious.                                                        |
+| SEPNS  | Susceptible, Exposed, Positively Infected, Negatively Infected, Susceptible      | Splits misinformation spreaders into positive-sentiment and negative-sentiment spreaders.                                |
+| SEDIS  | Susceptible, Exposed, Doubtful, Infected, Susceptible                            | Adds a doubtful state for users who question the information before accepting, rejecting, or spreading it.               |
+| SEDPNR | Susceptible, Exposed, Doubtful, Positively Infected, Negatively Infected, Restrained | Combines doubt, sentiment-aware misinformation spreading, and a restrained state for users who permanently stop spreading. |
+
+### Governing equations
+
+**SI**
+
+$$\frac{dS}{dt} = -\frac{\beta S I}{n} \qquad \frac{dI}{dt} = \frac{\beta S I}{n}$$
+
+**SIS**
+
+$$\frac{dS}{dt} = -\frac{\beta S I}{n} + \gamma I \qquad \frac{dI}{dt} = \frac{\beta S I}{n} - \gamma I$$
+
+**SIR**
+
+$$\frac{dS}{dt} = -\frac{\beta S I}{n} \qquad \frac{dI}{dt} = \frac{\beta S I}{n} - \gamma I \qquad \frac{dR}{dt} = \gamma I$$
+
+**SEIR**
+
+$$\frac{dS}{dt} = -\frac{\beta S I}{n} \qquad \frac{dE}{dt} = \frac{\beta S I}{n} - \sigma E$$
+
+$$\frac{dI}{dt} = \sigma E - \gamma I \qquad \frac{dR}{dt} = \gamma I$$
+
+**SEPNS**
+
+$$\frac{dS}{dt} = -\frac{\alpha S (P + N)}{n} + \mu_1 P + \mu_2 N + \mu_e E$$
+
+$$\frac{dE}{dt} = \frac{\alpha S (P + N)}{n} - (\beta_1 + \beta_2 + \mu_e) E$$
+
+$$\frac{dP}{dt} = \beta_1 E - \mu_1 P \qquad \frac{dN}{dt} = \beta_2 E - \mu_2 N$$
+
+**SEDIS**
+
+$$\frac{dS}{dt} = \mu_1 E + \mu_2 D + \mu_3 I - \alpha S$$
+
+$$\frac{dE}{dt} = \alpha S - (\beta_1 + \beta_2 + \mu_1) E \qquad \frac{dD}{dt} = \beta_1 E - (\gamma + \mu_2) D$$
+
+$$\frac{dI}{dt} = \gamma D + \beta_2 E - \mu_3 I$$
+
+**SEDPNR**
+
+$$\frac{dS}{dt} = \mu_1 E + \mu_2 D - \alpha S \qquad \frac{dE}{dt} = \alpha S - (\beta_1 + \beta_2 + \gamma + \mu_1) E$$
+
+$$\frac{dD}{dt} = \gamma E - (\beta_3 + \beta_4 + \mu_2) D$$
+
+$$\frac{dP}{dt} = \beta_1 E + \beta_3 D - \lambda_1 P \qquad \frac{dN}{dt} = \beta_2 E + \beta_4 D - \lambda_2 N$$
+
+$$\frac{dR}{dt} = \lambda_1 P + \lambda_2 N$$
 
 **Compartments (state variables):**
 
@@ -59,32 +105,15 @@ The simulations are implemented in `main.py`. Each model is solved with `scipy.i
 * $\lambda_2$ — rate at which negatively-infected spreaders move to the restrained state $R$ (SEDPNR)
 
 
-## Project Structure
-
-```text
-.
-├── main.py
-├── Epidemic modeling for misinformation spread.pdf
-├── LICENSE
-└── figs
-    ├── SI_model_ex.png
-    ├── SIS_model_ex.png
-    ├── SIR_model_ex.png
-    ├── SEIR_model_ex.png
-    ├── SEPNS_model_ex.png
-    ├── SEDIS_model_ex.png
-    └── SEDPNR_model_ex.png
-```
-
 ## Requirements
 
 Python 3.9 or newer is recommended.
 
-| Dependency | Purpose |
-|---|---|
-| `numpy` | Numerical arrays and simulation time grids |
-| `scipy` | Solving ODE systems with `solve_ivp` |
-| `matplotlib` | Plotting and saving simulation figures |
+| Dependency   | Purpose                                     |
+| ------------ | ------------------------------------------- |
+| `numpy`      | Numerical arrays and simulation time grids  |
+| `scipy`      | Solving ODE systems with `solve_ivp`        |
+| `matplotlib` | Plotting and saving simulation figures      |
 
 ## Installation
 
@@ -117,88 +146,72 @@ pip install numpy scipy matplotlib
 
 ## Usage
 
-Run the simulator:
+This project is a console application. **Read [`Documentation.md`](Documentation.md)** for the project structure, the full list of CLI commands, parameter overrides, and worked examples for both running models and generating JSON samples.
+
+A short taste of the CLI:
 
 ```bash
-python main.py
+python main.py run-all                                 # run every model with defaults
+python main.py run SIR --param beta=0.4 --param gamma=0.12   # run one model with overrides
+python main.py sample SIR SIR_sample1.json             # save a JSON sample to samples/
+python main.py --help                                  # full CLI help
 ```
 
-The script runs all implemented models, prints the main parameters and peak-spread information to the terminal, saves the generated PNG figures into the `figs/` directory, and displays the plots.
+`run` / `run-all` write PNG figures to `figs/` and open them in matplotlib; `sample` writes JSON to `samples/`. See [`Documentation.md`](Documentation.md) for everything else.
 
 ## Output Figures
 
-| Model | Preview |
-|---|---|
-| SI | ![SI model result](figs/SI_model_ex.png) |
-| SIS | ![SIS model result](figs/SIS_model_ex.png) |
-| SIR | ![SIR model result](figs/SIR_model_ex.png) |
-| SEIR | ![SEIR model result](figs/SEIR_model_ex.png) |
-| SEPNS | ![SEPNS model result](figs/SEPNS_model_ex.png) |
-| SEDIS | ![SEDIS model result](figs/SEDIS_model_ex.png) |
-| SEDPNR | ![SEDPNR model result](figs/SEDPNR_model_ex.png) |
+| Model  | Preview                                            |
+| ------ | -------------------------------------------------- |
+| SI     | ![SI model result](figs/SI_model_ex.png)           |
+| SIS    | ![SIS model result](figs/SIS_model_ex.png)         |
+| SIR    | ![SIR model result](figs/SIR_model_ex.png)         |
+| SEIR   | ![SEIR model result](figs/SEIR_model_ex.png)       |
+| SEPNS  | ![SEPNS model result](figs/SEPNS_model_ex.png)     |
+| SEDIS  | ![SEDIS model result](figs/SEDIS_model_ex.png)     |
+| SEDPNR | ![SEDPNR model result](figs/SEDPNR_model_ex.png)   |
 
 ## Default Simulation Parameters
 
-The parameters are configured directly in `main.py`.
+Each model's default parameters live in its `*Params` dataclass under `models/<NAME>.py`. The CLI applies these defaults unless overridden with `--param KEY=VALUE` — see [`Documentation.md`](Documentation.md) for the override reference.
 
-| Model | Population | Initial Conditions | Main Rates | Simulation Length |
-|---|---:|---|---|---:|
-| SI | 10,000 | 10 infected | `beta = 0.30` | 60 days |
-| SIS | 10,000 | 10 infected | `beta = 0.30`, `gamma = 0.10` | 120 days |
-| SIR | 10,000 | 10 infected, 0 recovered | `beta = 0.30`, `gamma = 0.10` | 160 days |
-| SEIR | 10,000 | 0 exposed, 10 infected | `beta = 0.30`, `sigma = 0.20`, `gamma = 0.10` | 200 days |
-| SEPNS | 10,000 | 0 exposed, 5 positively infected, 5 negatively infected | `alpha = 0.20`, `beta1 = 0.15`, `beta2 = 0.20`, `mu1 = 0.05`, `mu2 = 0.05`, `mu_e = 0.03` | 200 days |
-| SEDIS | 10,000 | 0 exposed, 0 doubtful, 10 infected | `alpha = 0.20`, `beta1 = 0.10`, `beta2 = 0.15`, `gamma = 0.08`, `mu1 = 0.04`, `mu2 = 0.05`, `mu3 = 0.05` | 200 days |
-| SEDPNR | 10,000 | 10 exposed, 10 doubtful, 5 positively infected, 5 negatively infected, 0 restrained | `alpha = 0.20`, `beta1 = 0.15`, `beta2 = 0.20`, `beta3 = 0.10`, `beta4 = 0.12`, `gamma = 0.10`, `lambda1 = 0.05`, `lambda2 = 0.05`, `mu1 = 0.03`, `mu2 = 0.04` | 100 days |
+| Model  | Population | Initial Conditions                                                                   | Main Rates                                                                                                                  | Simulation Length |
+| ------ | ---------: | ------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------- | ----------------: |
+| SI     |     10,000 | 10 infected                                                                          | `beta = 0.30`                                                                                                               |           60 days |
+| SIS    |     10,000 | 10 infected                                                                          | `beta = 0.30`, `gamma = 0.10`                                                                                               |          120 days |
+| SIR    |     10,000 | 10 infected, 0 recovered                                                             | `beta = 0.30`, `gamma = 0.10`                                                                                               |          160 days |
+| SEIR   |     10,000 | 0 exposed, 10 infected                                                               | `beta = 0.30`, `sigma = 0.20`, `gamma = 0.10`                                                                               |          200 days |
+| SEPNS  |     10,000 | 0 exposed, 5 positively infected, 5 negatively infected                              | `alpha = 0.20`, `beta1 = 0.15`, `beta2 = 0.20`, `mu1 = 0.05`, `mu2 = 0.05`, `mu_e = 0.03`                                   |          200 days |
+| SEDIS  |     10,000 | 0 exposed, 0 doubtful, 10 infected                                                   | `alpha = 0.20`, `beta1 = 0.10`, `beta2 = 0.15`, `gamma = 0.08`, `mu1 = 0.04`, `mu2 = 0.05`, `mu3 = 0.05`                    |          200 days |
+| SEDPNR |     10,000 | 10 exposed, 10 doubtful, 5 positively infected, 5 negatively infected, 0 restrained  | `alpha = 0.20`, `beta1 = 0.15`, `beta2 = 0.20`, `beta3 = 0.10`, `beta4 = 0.12`, `gamma = 0.10`, `lambda1 = 0.05`, `lambda2 = 0.05`, `mu1 = 0.03`, `mu2 = 0.04` | 100 days |
 
 ## Customizing the Simulation
 
-To change a simulation, edit the corresponding parameter object in `main.py`.
-
-For example, the SEDPNR parameters are configured like this:
-
-```python
-sedpnr_params = SEDPNRParams(
-    population           = 10_000,
-    initial_exposed      = 10,
-    initial_doubtful     = 10,
-    initial_pos_infected = 5,
-    initial_neg_infected = 5,
-    initial_restrained   = 0,
-    alpha                = 0.20,
-    beta1                = 0.15,
-    beta2                = 0.20,
-    beta3                = 0.10,
-    beta4                = 0.12,
-    gamma                = 0.10,
-    lambda1              = 0.05,
-    lambda2              = 0.05,
-    mu1                  = 0.03,
-    mu2                  = 0.04,
-    t_end                = 100.0,
-    t_steps              = 1_000,
-)
-```
-
-After changing the parameters, rerun:
+Parameters are overridden directly from the command line — no source edits required. For example, run SEDPNR with stronger restraint:
 
 ```bash
-python main.py
+python main.py run SEDPNR --param lambda1=0.08 --param lambda2=0.08 --param t_end=120
 ```
 
-The figures in `figs/` will be regenerated.
+Or save the same scenario as a JSON sample for downstream analysis:
+
+```bash
+python main.py sample SEDPNR SEDPNR_strong_restraint.json --param lambda1=0.08 --param lambda2=0.08 --n-points 2000
+```
+
+The full list of overridable keys per model, and many more examples, is in [`Documentation.md`](Documentation.md).
 
 ## Reproducibility
 
 The current implementation is deterministic. It solves ordinary differential equations rather than running a random agent-based simulation. Running the same code with the same parameters should produce the same curves.
 
-| Setting | Value |
-|---|---:|
-| ODE solver | `scipy.integrate.solve_ivp` |
-| Solver method | `RK45` |
-| Figure size | `10 x 5` inches |
-| Figure DPI | `150` |
-| Output directory | `figs` |
+| Setting          |                       Value |
+| ---------------- | --------------------------: |
+| ODE solver       | `scipy.integrate.solve_ivp` |
+| Solver method    | `RK45`                      |
+| Figure size      | `10 x 5` inches             |
+| Figure DPI       | `150`                       |
+| Output directory | `figs`                      |
 
 ## Notes on Interpretation
 

@@ -115,7 +115,6 @@ def mark_peak(
 
 
 def dominant_infected_curve(
-    t: np.ndarray,
     named_curves: dict[str, np.ndarray],
     infected_keys: list[str],
 ) -> tuple[str, np.ndarray]:
