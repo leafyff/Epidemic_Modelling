@@ -14,61 +14,15 @@ The simulator is a console application: `main.py` is an argparse-based CLI that 
 
 ## Implemented Models
 
-| Model  | Full Name                                                                        | Main Idea                                                                                                                |
-| ------ | -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| SI     | Susceptible, Infected                                                            | The simplest irreversible spread model. Susceptible individuals become infected, and infected individuals remain infected. |
-| SIS    | Susceptible, Infected, Susceptible                                               | Infected individuals can return to the susceptible state, so the spread can persist over time.                           |
-| SIR    | Susceptible, Infected, Recovered                                                 | Infected individuals recover into a permanently immune or removed state.                                                 |
-| SEIR   | Susceptible, Exposed, Infected, Recovered                                        | Adds a latent exposed state before individuals become infectious.                                                        |
-| SEPNS  | Susceptible, Exposed, Positively Infected, Negatively Infected, Susceptible      | Splits misinformation spreaders into positive-sentiment and negative-sentiment spreaders.                                |
-| SEDIS  | Susceptible, Exposed, Doubtful, Infected, Susceptible                            | Adds a doubtful state for users who question the information before accepting, rejecting, or spreading it.               |
-| SEDPNR | Susceptible, Exposed, Doubtful, Positively Infected, Negatively Infected, Restrained | Combines doubt, sentiment-aware misinformation spreading, and a restrained state for users who permanently stop spreading. |
-
-### Governing equations
-
-**SI**
-
-$$\frac{dS}{dt} = -\frac{\beta S I}{n} \qquad \frac{dI}{dt} = \frac{\beta S I}{n}$$
-
-**SIS**
-
-$$\frac{dS}{dt} = -\frac{\beta S I}{n} + \gamma I \qquad \frac{dI}{dt} = \frac{\beta S I}{n} - \gamma I$$
-
-**SIR**
-
-$$\frac{dS}{dt} = -\frac{\beta S I}{n} \qquad \frac{dI}{dt} = \frac{\beta S I}{n} - \gamma I \qquad \frac{dR}{dt} = \gamma I$$
-
-**SEIR**
-
-$$\frac{dS}{dt} = -\frac{\beta S I}{n} \qquad \frac{dE}{dt} = \frac{\beta S I}{n} - \sigma E$$
-
-$$\frac{dI}{dt} = \sigma E - \gamma I \qquad \frac{dR}{dt} = \gamma I$$
-
-**SEPNS**
-
-$$\frac{dS}{dt} = -\frac{\alpha S (P + N)}{n} + \mu_1 P + \mu_2 N + \mu_e E$$
-
-$$\frac{dE}{dt} = \frac{\alpha S (P + N)}{n} - (\beta_1 + \beta_2 + \mu_e) E$$
-
-$$\frac{dP}{dt} = \beta_1 E - \mu_1 P \qquad \frac{dN}{dt} = \beta_2 E - \mu_2 N$$
-
-**SEDIS**
-
-$$\frac{dS}{dt} = \mu_1 E + \mu_2 D + \mu_3 I - \alpha S$$
-
-$$\frac{dE}{dt} = \alpha S - (\beta_1 + \beta_2 + \mu_1) E \qquad \frac{dD}{dt} = \beta_1 E - (\gamma + \mu_2) D$$
-
-$$\frac{dI}{dt} = \gamma D + \beta_2 E - \mu_3 I$$
-
-**SEDPNR**
-
-$$\frac{dS}{dt} = \mu_1 E + \mu_2 D - \alpha S \qquad \frac{dE}{dt} = \alpha S - (\beta_1 + \beta_2 + \gamma + \mu_1) E$$
-
-$$\frac{dD}{dt} = \gamma E - (\beta_3 + \beta_4 + \mu_2) D$$
-
-$$\frac{dP}{dt} = \beta_1 E + \beta_3 D - \lambda_1 P \qquad \frac{dN}{dt} = \beta_2 E + \beta_4 D - \lambda_2 N$$
-
-$$\frac{dR}{dt} = \lambda_1 P + \lambda_2 N$$
+| Model | Full Name | Main Idea | Model's ODE |
+|---|---|---|---|
+| SI | Susceptible, Infected | The simplest irreversible spread model. Susceptible individuals become infected, and infected individuals remain infected. | $\Large\frac{dS}{dt} = -\frac{\beta S I}{n}$ <br> $\Large\frac{dI}{dt} = \frac{\beta S I}{n}$ |
+| SIS | Susceptible, Infected, Susceptible | Infected individuals can return to the susceptible state, so the spread can persist over time. | $\Large\frac{dS}{dt} = -\frac{\beta S I}{n} + \gamma I$ <br> $\Large\frac{dI}{dt} = \frac{\beta S I}{n} - \gamma I$ |
+| SIR | Susceptible, Infected, Recovered | Infected individuals recover into a permanently immune or removed state. | $\Large\frac{dS}{dt} = -\frac{\beta S I}{n}$ <br> $\Large\frac{dI}{dt} = \frac{\beta S I}{n} - \gamma I$ <br> $\Large\frac{dR}{dt} = \gamma I$ |
+| SEIR | Susceptible, Exposed, Infected, Recovered | Adds a latent exposed state before individuals become infectious. | $\Large\frac{dS}{dt} = -\frac{\beta S I}{n}$ <br> $\Large\frac{dE}{dt} = \frac{\beta S I}{n} - \sigma E$ <br> $\Large\frac{dI}{dt} = \sigma E - \gamma I$ <br> $\Large\frac{dR}{dt} = \gamma I$ |
+| SEPNS | Susceptible, Exposed, Positively Infected, Negatively Infected, Susceptible | Splits misinformation spreaders into positive-sentiment and negative-sentiment spreaders. | $\Large\frac{dS}{dt} = -\frac{\alpha S (P + N)}{n} + \mu_1 P + \mu_2 N + \mu_e E$ <br> $\Large\frac{dE}{dt} = \frac{\alpha S (P + N)}{n} - (\beta_1 + \beta_2 + \mu_e) E$ <br> $\Large\frac{dP}{dt} = \beta_1 E - \mu_1 P$ <br> $\Large\frac{dN}{dt} = \beta_2 E - \mu_2 N$ |
+| SEDIS | Susceptible, Exposed, Doubtful, Infected, Susceptible | Adds a doubtful state for users who question the information before accepting, rejecting, or spreading it. | $\Large\frac{dS}{dt} = \mu_1 E + \mu_2 D + \mu_3 I - \alpha S$ <br> $\Large\frac{dE}{dt} = \alpha S - (\beta_1 + \beta_2 + \mu_1) E$ <br> $\Large\frac{dD}{dt} = \beta_1 E - (\gamma + \mu_2) D$ <br> $\Large\frac{dI}{dt} = \gamma D + \beta_2 E - \mu_3 I$ |
+| SEDPNR | Susceptible, Exposed, Doubtful, Positively Infected, Negatively Infected, Restrained | Combines doubt, sentiment-aware misinformation spreading, and a restrained state for users who permanently stop spreading the misinformation. | $\Large\frac{dS}{dt} = \mu_1 E + \mu_2 D - \alpha S$ <br> $\Large\frac{dE}{dt} = \alpha S - (\beta_1 + \beta_2 + \gamma + \mu_1) E$ <br> $\Large\frac{dD}{dt} = \gamma E - (\beta_3 + \beta_4 + \mu_2) D$ <br> $\Large\frac{dP}{dt} = \beta_1 E + \beta_3 D - \lambda_1 P$ <br> $\Large\frac{dN}{dt} = \beta_2 E + \beta_4 D - \lambda_2 N$ <br> $\Large\frac{dR}{dt} = \lambda_1 P + \lambda_2 N$ |
 
 **Compartments (state variables):**
 
