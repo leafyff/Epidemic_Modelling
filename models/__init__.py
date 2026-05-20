@@ -11,6 +11,7 @@ Re-exports below let callers write::
 without needing to know which file a given symbol lives in.
 """
 
+from .modif_SEDIS import ModifSEDISParams, model_modif_sedis, modif_sedis_ode
 from .SEDIS import SEDISParams, model_sedis, sedis_ode
 from .SEDPNR import SEDPNRParams, model_sedpnr, sedpnr_ode
 from .SEIR import SEIRParams, model_seir, seir_ode
@@ -20,11 +21,12 @@ from .SIR import SIRParams, model_sir, sir_ode
 from .SIS import SISParams, model_sis, sis_ode
 
 __all__ = [
-    "SIParams",     "si_ode",     "model_si",
-    "SISParams",    "sis_ode",    "model_sis",
-    "SIRParams",    "sir_ode",    "model_sir",
-    "SEIRParams",   "seir_ode",   "model_seir",
-    "SEPNSParams",  "sepns_ode",  "model_sepns",
-    "SEDISParams",  "sedis_ode",  "model_sedis",
-    "SEDPNRParams", "sedpnr_ode", "model_sedpnr",
+    "SIParams",         "si_ode",           "model_si",
+    "SISParams",        "sis_ode",          "model_sis",
+    "SIRParams",        "sir_ode",          "model_sir",
+    "SEIRParams",       "seir_ode",         "model_seir",
+    "SEPNSParams",      "sepns_ode",        "model_sepns",
+    "SEDISParams",      "sedis_ode",        "model_sedis",
+    "SEDPNRParams",     "sedpnr_ode",       "model_sedpnr",
+    "ModifSEDISParams", "modif_sedis_ode",  "model_modif_sedis",
 ]

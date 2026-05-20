@@ -26,6 +26,7 @@ from dataclasses import asdict
 from typing import Any
 
 from drawing import solve
+from models.modif_SEDIS import ModifSEDISParams, modif_sedis_ode
 from models.SEDIS import SEDISParams, sedis_ode
 from models.SEDPNR import SEDPNRParams, sedpnr_ode
 from models.SEIR import SEIRParams, seir_ode
@@ -80,6 +81,15 @@ def _setup(params: Any) -> tuple[str, Any, list[float], tuple, list[str]]:
         return ("SEDIS", sedis_ode, [N - E0 - D0 - I0, E0, D0, I0],
                 (params.alpha, params.beta1, params.beta2, params.gamma,
                  params.mu1, params.mu2, params.mu3, N),
+                ["S", "E", "D", "I"])
+
+    if isinstance(params, ModifSEDISParams):
+        E0 = float(params.initial_exposed)
+        D0 = float(params.initial_doubtful)
+        I0 = float(params.initial_infected)
+        return ("modif_SEDIS", modif_sedis_ode, [N - E0 - D0 - I0, E0, D0, I0],
+                (params.alpha, params.beta1, params.beta2, params.gamma,
+                 params.mu1, params.mu2, params.mu3),
                 ["S", "E", "D", "I"])
 
     if isinstance(params, SEDPNRParams):

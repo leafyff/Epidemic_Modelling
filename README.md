@@ -2,7 +2,7 @@
 
 A Python simulation project for comparing classical epidemic models and misinformation-spread models in digital networks.
 
-The project implements deterministic compartmental models using systems of ordinary differential equations. It includes traditional epidemic models such as SI, SIS, SIR, and SEIR, together with social-network misinformation models such as SEPNS, SEDIS, and SEDPNR.
+The project implements deterministic compartmental models using systems of ordinary differential equations. It includes traditional epidemic models such as SI, SIS, SIR, and SEIR, together with social-network misinformation models such as SEPNS, SEDIS, modif_SEDIS, and SEDPNR.
 
 ## Overview
 
@@ -22,6 +22,7 @@ The simulator is a console application: `main.py` is an argparse-based CLI that 
 | SEIR | Susceptible, Exposed, Infected, Recovered | Adds a latent exposed state before individuals become infectious. | $\Large\frac{dS}{dt} = -\frac{\beta S I}{n}$ <br> $\Large\frac{dE}{dt} = \frac{\beta S I}{n} - \sigma E$ <br> $\Large\frac{dI}{dt} = \sigma E - \gamma I$ <br> $\Large\frac{dR}{dt} = \gamma I$ |
 | SEPNS | Susceptible, Exposed, Positively Infected, Negatively Infected, Susceptible | Splits misinformation spreaders into positive-sentiment and negative-sentiment spreaders. | $\Large\frac{dS}{dt} = -\frac{\alpha S (P + N)}{n} + \mu_1 P + \mu_2 N + \mu_e E$ <br> $\Large\frac{dE}{dt} = \frac{\alpha S (P + N)}{n} - (\beta_1 + \beta_2 + \mu_e) E$ <br> $\Large\frac{dP}{dt} = \beta_1 E - \mu_1 P$ <br> $\Large\frac{dN}{dt} = \beta_2 E - \mu_2 N$ |
 | SEDIS | Susceptible, Exposed, Doubtful, Infected, Susceptible | Adds a doubtful state for users who question the information before accepting, rejecting, or spreading it. | $\Large\frac{dS}{dt} = \mu_1 E + \mu_2 D + \mu_3 I - \alpha S$ <br> $\Large\frac{dE}{dt} = \alpha S - (\beta_1 + \beta_2 + \mu_1) E$ <br> $\Large\frac{dD}{dt} = \beta_1 E - (\gamma + \mu_2) D$ <br> $\Large\frac{dI}{dt} = \gamma D + \beta_2 E - \mu_3 I$ |
+| modif_SEDIS | Modified SEDIS | Same compartments and transitions as SEDIS; the only difference is that the exposure term carries an explicit $I$ factor — $\alpha S I$ instead of $\alpha S$ — so the rate at which susceptibles are exposed scales with the current number of active spreaders. | $\Large\frac{dS}{dt} = \mu_1 E + \mu_2 D + \mu_3 I - \alpha SI$ <br> $\Large\frac{dE}{dt} = \alpha SI - (\beta_1 + \beta_2 + \mu_1) E$ <br> $\Large\frac{dD}{dt} = \beta_1 E - (\gamma + \mu_2) D$ <br> $\Large\frac{dI}{dt} = \gamma D + \beta_2 E - \mu_3 I$ |
 | SEDPNR | Susceptible, Exposed, Doubtful, Positively Infected, Negatively Infected, Restrained | Combines doubt, sentiment-aware misinformation spreading, and a restrained state for users who permanently stop spreading the misinformation. | $\Large\frac{dS}{dt} = \mu_1 E + \mu_2 D - \alpha S$ <br> $\Large\frac{dE}{dt} = \alpha S - (\beta_1 + \beta_2 + \gamma + \mu_1) E$ <br> $\Large\frac{dD}{dt} = \gamma E - (\beta_3 + \beta_4 + \mu_2) D$ <br> $\Large\frac{dP}{dt} = \beta_1 E + \beta_3 D - \lambda_1 P$ <br> $\Large\frac{dN}{dt} = \beta_2 E + \beta_4 D - \lambda_2 N$ <br> $\Large\frac{dR}{dt} = \lambda_1 P + \lambda_2 N$ |
 
 **Compartments (state variables):**
@@ -38,23 +39,23 @@ The simulator is a console application: `main.py` is an argparse-based CLI that 
 **Transmission / contact parameters:**
 
 * $\beta$ — infection (transmission) rate from $S$ to $I$ in classic SI/SIS/SIR/SEIR models
-* $\alpha$ — contact rate at which susceptibles become exposed in SEPNS/SEDIS/SEDPNR
+* $\alpha$ — contact rate at which susceptibles become exposed in SEPNS/SEDIS/SEDPNR. In modif_SEDIS the exposure term gains an explicit $I$ factor ($\alpha S I$ instead of $\alpha S$), so $\alpha$ is a per-pair interaction rate and is numerically much smaller.
 
 **Progression parameters (out of $E$ and $D$):**
 
 * $\sigma$ — rate at which exposed individuals become infectious (SEIR)
-* $\beta_1$ — transition rate from $E$ to the next state (to $P$ in SEPNS/SEDPNR, to $D$ in SEDIS)
-* $\beta_2$ — transition rate from $E$ to the next state (to $N$ in SEPNS/SEDPNR, to $I$ in SEDIS)
-* $\gamma$ — recovery / progression rate (from $I$ to $R$ in SIR/SEIR; from $D$ to $I$ in SEDIS; from $E$ to $D$ in SEDPNR)
+* $\beta_1$ — transition rate from $E$ to the next state (to $P$ in SEPNS/SEDPNR, to $D$ in SEDIS/modif_SEDIS)
+* $\beta_2$ — transition rate from $E$ to the next state (to $N$ in SEPNS/SEDPNR, to $I$ in SEDIS/modif_SEDIS)
+* $\gamma$ — recovery / progression rate (from $I$ to $R$ in SIR/SEIR; from $D$ to $I$ in SEDIS/modif_SEDIS; from $E$ to $D$ in SEDPNR)
 * $\beta_3$ — transition rate from $D$ to $P$ (SEDPNR)
 * $\beta_4$ — transition rate from $D$ to $N$ (SEDPNR)
 
 **Return / removal parameters:**
 
 * $\mu_e$ — rate at which exposed individuals return to susceptible (SEPNS)
-* $\mu_1$ — return-to-susceptible rate (from $P$ in SEPNS; from $E$ in SEDIS/SEDPNR)
-* $\mu_2$ — return-to-susceptible rate (from $N$ in SEPNS; from $D$ in SEDIS/SEDPNR)
-* $\mu_3$ — return-to-susceptible rate from $I$ (SEDIS)
+* $\mu_1$ — return-to-susceptible rate (from $P$ in SEPNS; from $E$ in SEDIS/modif_SEDIS/SEDPNR)
+* $\mu_2$ — return-to-susceptible rate (from $N$ in SEPNS; from $D$ in SEDIS/modif_SEDIS/SEDPNR)
+* $\mu_3$ — return-to-susceptible rate from $I$ (SEDIS/modif_SEDIS)
 * $\lambda_1$ — rate at which positively-infected spreaders move to the restrained state $R$ (SEDPNR)
 * $\lambda_2$ — rate at which negatively-infected spreaders move to the restrained state $R$ (SEDPNR)
 
@@ -123,6 +124,7 @@ python main.py --help                                  # full CLI help
 | SEIR   | ![SEIR model result](figs/SEIR_model_ex.png)       |
 | SEPNS  | ![SEPNS model result](figs/SEPNS_model_ex.png)     |
 | SEDIS  | ![SEDIS model result](figs/SEDIS_model_ex.png)     |
+| modif_SEDIS | ![modif_SEDIS model result](figs/modif_SEDIS_model_ex.png) |
 | SEDPNR | ![SEDPNR model result](figs/SEDPNR_model_ex.png)   |
 
 ## Default Simulation Parameters
@@ -137,6 +139,7 @@ Each model's default parameters live in its `*Params` dataclass under `models/<N
 | SEIR   |     10,000 | 0 exposed, 10 infected                                                               | `beta = 0.30`, `sigma = 0.20`, `gamma = 0.10`                                                                               |          200 days |
 | SEPNS  |     10,000 | 0 exposed, 5 positively infected, 5 negatively infected                              | `alpha = 0.20`, `beta1 = 0.15`, `beta2 = 0.20`, `mu1 = 0.05`, `mu2 = 0.05`, `mu_e = 0.03`                                   |          200 days |
 | SEDIS  |     10,000 | 0 exposed, 0 doubtful, 10 infected                                                   | `alpha = 0.20`, `beta1 = 0.10`, `beta2 = 0.15`, `gamma = 0.08`, `mu1 = 0.04`, `mu2 = 0.05`, `mu3 = 0.05`                    |          200 days |
+| modif_SEDIS | 10,000 | 0 exposed, 0 doubtful, 10 infected                                                | `alpha = 2e-5` (per S*I), `beta1 = 0.10`, `beta2 = 0.15`, `gamma = 0.08`, `mu1 = 0.04`, `mu2 = 0.05`, `mu3 = 0.05`         |          200 days |
 | SEDPNR |     10,000 | 10 exposed, 10 doubtful, 5 positively infected, 5 negatively infected, 0 restrained  | `alpha = 0.20`, `beta1 = 0.15`, `beta2 = 0.20`, `beta3 = 0.10`, `beta4 = 0.12`, `gamma = 0.10`, `lambda1 = 0.05`, `lambda2 = 0.05`, `mu1 = 0.03`, `mu2 = 0.04` | 100 days |
 
 ## Customizing the Simulation

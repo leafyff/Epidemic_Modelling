@@ -23,6 +23,7 @@ and that `numpy`, `scipy` and `matplotlib` are installed
 │   ├── SEIR.py
 │   ├── SEPNS.py
 │   ├── SEDIS.py
+│   ├── modif_SEDIS.py
 │   └── SEDPNR.py
 ├── figs/               # PNG plots written by each model_* function
 ├── samples/            # JSON samples written by sampling.create_sample()
@@ -59,7 +60,7 @@ python main.py <command> [options]
 | `find-parameters <SAMPLE>` | Estimate the discrete-model rate parameters from a JSON sample via least squares (alias: `find_parameters`). |
 
 `<MODEL>` is case-insensitive and one of:
-`SI`, `SIS`, `SIR`, `SEIR`, `SEPNS`, `SEDIS`, `SEDPNR`.
+`SI`, `SIS`, `SIR`, `SEIR`, `SEPNS`, `SEDIS`, `modif_SEDIS`, `SEDPNR`.
 
 Parameter overrides for `run` and `sample` use `--param KEY=VALUE`
 (repeatable). `KEY` must match a field of the model's `*Params` dataclass —
@@ -92,6 +93,7 @@ python main.py run SIR
 python main.py run SEIR
 python main.py run SEPNS
 python main.py run SEDIS
+python main.py run modif_SEDIS
 python main.py run SEDPNR
 ```
 
@@ -104,6 +106,7 @@ python main.py run SIR    --param population=50000 --param beta=0.4 --param gamm
 python main.py run SEIR   --param beta=0.45 --param sigma=0.2 --param gamma=0.12
 python main.py run SEPNS  --param alpha=0.25 --param beta1=0.18 --param beta2=0.22
 python main.py run SEDIS  --param alpha=0.25 --param beta1=0.12 --param beta2=0.18 --param gamma=0.10
+python main.py run modif_SEDIS --param alpha=2.5e-5 --param beta1=0.12 --param beta2=0.18 --param gamma=0.10
 python main.py run SEDPNR --param beta1=0.18 --param beta2=0.22 --param lambda1=0.06 --param lambda2=0.06
 ```
 
@@ -219,7 +222,7 @@ when you generate the sample shrinks this gap; decreasing it widens it.
 | Model | Status |
 |---|---|
 | SIR | Supported |
-| SI / SIS / SEIR / SEPNS / SEDIS / SEDPNR | Not yet — add a builder to `estimation._BUILDERS` to extend. |
+| SI / SIS / SEIR / SEPNS / SEDIS / modif_SEDIS / SEDPNR | Not yet — add a builder to `estimation._BUILDERS` to extend. |
 
 ---
 
@@ -324,6 +327,32 @@ sedis_params = SEDISParams(
 )
 ```
 
+### modif_SEDIS
+
+Same compartments and transitions as SEDIS; the **only** difference is
+that the exposure term gains an explicit `I` factor — `alpha * S * I`
+instead of `alpha * S`. Because the rate now scales with the number of
+spreaders, `alpha` here is a per-pair interaction rate and is
+numerically much smaller than the SEDIS `alpha`.
+
+```python
+modif_sedis_params = ModifSEDISParams(
+    population       = 10_000,  # total network size
+    initial_exposed  = 0,       # exposed individuals at t=0
+    initial_doubtful = 0,       # doubtful individuals at t=0
+    initial_infected = 10,      # seed spreaders at t=0
+    alpha            = 2.0e-5,  # S -> E   per-pair exposure rate (per S, per I)
+    beta1            = 0.10,    # E -> D   exposed becomes doubtful
+    beta2            = 0.15,    # E -> I   exposed directly accepts and spreads
+    gamma            = 0.08,    # D -> I   doubtful individual becomes convinced
+    mu1              = 0.04,    # E -> S   exposed rejects information early
+    mu2              = 0.05,    # D -> S   doubtful rejects after verification
+    mu3              = 0.05,    # I -> S   spreader loses interest
+    t_end            = 200.0,   # simulation end time (days)
+    t_steps          = 1_000,   # number of output time points
+)
+```
+
 ### SEDPNR
 
 ```python
@@ -363,7 +392,7 @@ takes precedence over `t_steps`.
 The CLI is a thin wrapper. The same workflows work directly from Python:
 
 ```python
-from models import SIRParams, model_sir
+from models import ModifSEDISParams, SIRParams, model_modif_sedis, model_sir
 from sampling import create_sample
 
 # Run + plot
@@ -372,4 +401,7 @@ fig = model_sir(SIRParams(beta=0.4, gamma=0.12))
 # Save a JSON sample
 create_sample(SIRParams(beta=0.3, gamma=0.1),
               "SIR_sample1.json", n_points=1000)
+
+# modif_SEDIS (alpha*S*I exposure)
+model_modif_sedis(ModifSEDISParams(alpha=2.5e-5, beta1=0.12))
 ```

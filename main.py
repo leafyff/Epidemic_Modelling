@@ -24,6 +24,7 @@ import matplotlib.pyplot as plt
 
 from estimation import find_parameters
 from models import (
+    ModifSEDISParams,
     SEDISParams,
     SEDPNRParams,
     SEIRParams,
@@ -31,6 +32,7 @@ from models import (
     SIParams,
     SIRParams,
     SISParams,
+    model_modif_sedis,
     model_sedis,
     model_sedpnr,
     model_seir,
@@ -42,13 +44,14 @@ from models import (
 from sampling import DEFAULT_N_POINTS, SAMPLES_DIR, create_sample
 
 MODEL_REGISTRY: dict[str, tuple[Any, Any]] = {
-    "SI"    : (SIParams,     model_si),
-    "SIS"   : (SISParams,    model_sis),
-    "SIR"   : (SIRParams,    model_sir),
-    "SEIR"  : (SEIRParams,   model_seir),
-    "SEPNS" : (SEPNSParams,  model_sepns),
-    "SEDIS" : (SEDISParams,  model_sedis),
-    "SEDPNR": (SEDPNRParams, model_sedpnr),
+    "SI"         : (SIParams,         model_si),
+    "SIS"        : (SISParams,        model_sis),
+    "SIR"        : (SIRParams,        model_sir),
+    "SEIR"       : (SEIRParams,       model_seir),
+    "SEPNS"      : (SEPNSParams,      model_sepns),
+    "SEDIS"      : (SEDISParams,      model_sedis),
+    "SEDPNR"     : (SEDPNRParams,     model_sedpnr),
+    "MODIF_SEDIS": (ModifSEDISParams, model_modif_sedis),
 }
 
 
