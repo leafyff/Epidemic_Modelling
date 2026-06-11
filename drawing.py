@@ -53,11 +53,17 @@ def ensure_figs_dir() -> None:
     os.makedirs(FIGS_DIR, exist_ok=True)
 
 
-def save_figure(fig: plt.Figure, model_name: str) -> None:
-    """Save *fig* to FIGS_DIR/<model_name>_model_ex.png."""
+def save_figure(fig: plt.Figure, name: str, suffix: str = "_model_ex") -> str:
+    """Save *fig* to ``FIGS_DIR/<name><suffix>.png`` and return the path.
+
+    Default ``suffix`` keeps the historical ``<model>_model_ex.png`` naming
+    used by every ``model_*`` function; pass ``suffix="_sample"`` (or any
+    other label) to save plots derived from JSON samples or other sources.
+    """
     ensure_figs_dir()
-    path = os.path.join(FIGS_DIR, f"{model_name}_model_ex.png")
+    path = os.path.join(FIGS_DIR, f"{name}{suffix}.png")
     fig.savefig(path, dpi=FIGURE_DPI, bbox_inches="tight")
+    return path
 
 
 # ---------------------------------------------------------------------------

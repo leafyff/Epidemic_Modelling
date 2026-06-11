@@ -1,0 +1,62 @@
+{
+  "model": "SEDIS",
+  "params": {
+    "population": 763,
+    "initial_infected": 3,
+    "source": "BMJ 1978-03-04 p.587 / outbreaks::influenza_england_1978_school",
+    "event": "1978 English boarding-school influenza A/H1N1",
+    "I_def": "confined-to-bed count (active infectious)",
+    "note": "E and D are latent (unobserved); fit to I(t) only"
+  },
+  "n_points": 14,
+  "dates": [
+    "1978-01-22",
+    "1978-01-23",
+    "1978-01-24",
+    "1978-01-25",
+    "1978-01-26",
+    "1978-01-27",
+    "1978-01-28",
+    "1978-01-29",
+    "1978-01-30",
+    "1978-01-31",
+    "1978-02-01",
+    "1978-02-02",
+    "1978-02-03",
+    "1978-02-04"
+  ],
+  "time": [
+    0.0,
+    1.0,
+    2.0,
+    3.0,
+    4.0,
+    5.0,
+    6.0,
+    7.0,
+    8.0,
+    9.0,
+    10.0,
+    11.0,
+    12.0,
+    13.0
+  ],
+  "compartments": {
+    "I": [
+      3.0,
+      8.0,
+      26.0,
+      76.0,
+      225.0,
+      298.0,
+      258.0,
+      233.0,
+      189.0,
+      128.0,
+      68.0,
+      29.0,
+      14.0,
+      4.0
+    ]
+  }
+}

@@ -26,7 +26,9 @@ Compartments:
 Governing equations
 --------------------------------------------------------------------------------
 
-Let lambda = alpha * S * I / N be the exposure rate (only Infected spreads):
+Let lambda = alpha * S be the exposure rate (per-S "leakage" form used in
+Govindankutty & Gopalan 2024; the rate at which a susceptible becomes
+exposed does not depend on the current number of spreaders):
 
     dS/dt = -lambda + mu1*E + mu2*D + mu3*I
     dE/dt = +lambda - (beta1 + beta2 + mu1) * E
@@ -36,7 +38,7 @@ Let lambda = alpha * S * I / N be the exposure rate (only Infected spreads):
 Conservation:  S(t) + E(t) + D(t) + I(t) = total population for all t.
 
 Parameters
-    alpha  : S -> E   exposure rate via contact with an Infected.
+    alpha  : S -> E   per-susceptible exposure rate (independent of I).
     beta1  : E -> D   exposed becomes sceptical / doubtful.
     beta2  : E -> I   exposed directly accepts and spreads.
     gamma  : D -> I   doubtful individual is eventually convinced.
@@ -48,12 +50,17 @@ Parameters
 Approximate basic reproduction number
 --------------------------------------------------------------------------------
 
-A first-order, mean-field approximation used by the simulator is
+Because the exposure term ``alpha * S`` does not depend on the number of
+spreaders, the classical next-generation R0 (which measures the average
+number of secondary infections per primary infection) is not well-defined
+for this model. Instead the simulator prints a steady-state ratio that
+characterises the relative pull of the spreader pool against the leakage
+of E back to S:
 
-    R0_approx = alpha * beta2 / (mu3 * (beta1 + beta2 + mu1))
+    ratio = alpha * beta2 / (mu3 * (beta1 + beta2 + mu1))
 
-This captures the direct E -> I -> reinfection loop only and underestimates
-the contribution of the D -> I path; treat it as a qualitative indicator.
+It is a qualitative indicator only; values above ~1 suggest a substantial
+spreader population at equilibrium.
 
 --------------------------------------------------------------------------------
 Typical use cases
@@ -89,7 +96,7 @@ class SEDISParams:
     initial_exposed  : int   = 0       # number of exposed individuals at t=0
     initial_doubtful : int   = 0       # number of doubtful individuals at t=0
     initial_infected : int   = 10      # number of infected (spreading) individuals at t=0
-    alpha            : float = 0.20    # S  -> E   exposure rate
+    alpha            : float = 0.20    # S  -> E   per-S exposure rate (independent of I)
     beta1            : float = 0.10    # E  -> D   exposed becomes sceptical / doubtful
     beta2            : float = 0.15    # E  -> I   exposed directly accepts and spreads
     gamma            : float = 0.08    # D  -> I   doubtful is eventually convinced, starts spreading
@@ -103,19 +110,25 @@ class SEDISParams:
 def sedis_ode(
     _t: float, y: list[float],
     alpha: float, beta1: float, beta2: float, gamma: float,
-    mu1: float, mu2: float, mu3: float, N: float,
+    mu1: float, mu2: float, mu3: float,
 ) -> list[float]:
     """SEDIS model ODEs for rumour propagation with a Doubtful compartment.
 
     Compartments: S, E, D, I
 
-    dS/dt = -(alpha * S * I / N)  +  mu1*E  +  mu2*D  +  mu3*I
-    dE/dt = +(alpha * S * I / N)  -  (beta1 + beta2 + mu1) * E
+    Exposure is the per-S leakage form ``alpha * S`` (no I factor): every
+    susceptible transitions to E at constant per-capita rate alpha,
+    independent of how many spreaders are currently active. This is the
+    form used in Govindankutty & Gopalan (2024); modif_SEDIS replaces it
+    with the mass-action term ``alpha * S * I``.
+
+    dS/dt = -alpha * S            +  mu1*E  +  mu2*D  +  mu3*I
+    dE/dt = +alpha * S            -  (beta1 + beta2 + mu1) * E
     dD/dt = +beta1 * E            -  (gamma + mu2) * D
     dI/dt = +beta2 * E + gamma * D  -  mu3 * I
     """
     S, E, D, I = y
-    exposure = alpha * S * I / N
+    exposure = alpha * S
     e_out    = (beta1 + beta2 + mu1) * E
     d_out    = (gamma + mu2) * D
     return [
@@ -141,14 +154,14 @@ def model_sedis(params: SEDISParams) -> plt.Figure:
     print(f"  Initial exposed              : {E0:,.0f}")
     print(f"  Initial doubtful             : {D0:,.0f}")
     print(f"  Initial infected             : {I0:,.0f}")
-    print(f"  alpha  (S -> E)              : {params.alpha}")
+    print(f"  alpha  (S -> E, per S)       : {params.alpha}")
     print(f"  beta1  (E -> D)              : {params.beta1}")
     print(f"  beta2  (E -> I)              : {params.beta2}")
     print(f"  gamma  (D -> I)              : {params.gamma}")
     print(f"  mu1    (E -> S)              : {params.mu1}")
     print(f"  mu2    (D -> S)              : {params.mu2}")
     print(f"  mu3    (I -> S)              : {params.mu3}")
-    print(f"  Approx. R0                   : {r0:.3f}")
+    print(f"  Equilibrium ratio (qual.)    : {r0:.3f}")
     print(f"  Simulation period            : {params.t_end} days")
 
     t, y = solve(
@@ -156,7 +169,7 @@ def model_sedis(params: SEDISParams) -> plt.Figure:
         [S0, E0, D0, I0],
         params.t_end, params.t_steps,
         (params.alpha, params.beta1, params.beta2, params.gamma,
-         params.mu1, params.mu2, params.mu3, N),
+         params.mu1, params.mu2, params.mu3),
     )
     S, E, D, I = y
 

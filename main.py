@@ -4,11 +4,13 @@ Epidemic Model Simulator — console entry point.
 This is a thin argparse-based CLI on top of the rest of the project.
 For full command examples and the project structure, see Documentation.md.
 
-Three commands:
+Five commands:
 
     python main.py run-all                       Run every model with defaults.
     python main.py run <MODEL>                   Run one model.
     python main.py sample <MODEL> <FILENAME>     Save a JSON sample to samples/.
+    python main.py find-parameters <SAMPLE>      Recover rates from a sample (NNLS).
+    python main.py plot-sample <SAMPLE>          Plot the time series of a JSON sample.
 
 Parameter overrides for ``run`` and ``sample`` use ``--param KEY=VALUE``,
 repeatable, where ``KEY`` is any field of the model's ``*Params`` dataclass.
@@ -23,6 +25,8 @@ from typing import Any, get_type_hints
 import matplotlib.pyplot as plt
 
 from estimation import find_parameters
+from fit_all import fit_all_models, print_se_report
+from plot_sample import plot_sample
 from models import (
     ModifSEDISParams,
     SEDISParams,
@@ -148,7 +152,38 @@ def _resolve_sample_path(name: str) -> str:
 
 
 def cmd_find_parameters(args: argparse.Namespace) -> None:
-    find_parameters(_resolve_sample_path(args.sample))
+    find_parameters(
+        _resolve_sample_path(args.sample),
+        weighting=args.weighting,
+        ridge=args.ridge,
+        scale=args.scale,
+    )
+
+
+def cmd_plot_sample(args: argparse.Namespace) -> None:
+    plot_sample(_resolve_sample_path(args.sample))
+    if not args.no_show:
+        plt.show()
+
+
+def cmd_fit_all(args: argparse.Namespace) -> None:
+    fixed: dict[str, float] = {}
+    for item in args.fix:
+        if "=" not in item:
+            sys.exit(f"error: --fix must be NAME=VALUE, got {item!r}")
+        key, raw = item.split("=", 1)
+        try:
+            fixed[key] = float(raw)
+        except ValueError:
+            sys.exit(f"error: --fix value for {key!r} must be a number, got {raw!r}")
+    result = fit_all_models(
+        _resolve_sample_path(args.sample),
+        loss=args.loss, fixed=fixed, ridge=args.ridge,
+        show=not args.no_show,
+    )
+    print_se_report(result)
+    if not args.no_show:
+        plt.show()
 
 
 # ---------------------------------------------------------------------------
@@ -220,7 +255,98 @@ def build_parser() -> argparse.ArgumentParser:
         "sample",
         help="Sample filename in samples/, or a path to a JSON sample.",
     )
-    p_find.set_defaults(func=cmd_find_parameters)
+    p_find.add_argument(
+        "--weighting",
+        choices=["auto", "uniform"],
+        default="auto",
+        help=(
+            "Weighting strategy for the LS fit. "
+            "'auto' (default) = GLS with per-compartment residual variance; "
+            "'uniform' = OLS (original NNLS estimator)."
+        ),
+    )
+    p_find.add_argument(
+        "--ridge",
+        type=str,
+        default="auto",
+        metavar="auto|off|LAMBDA",
+        help=(
+            "Tikhonov/ridge regularization. 'auto' (default) = GCV-selected "
+            "lambda, engaged only when cond exceeds the threshold; 'off' (or 0) "
+            "= disabled; a number = manual lambda. Stabilises ill-conditioned / "
+            "structurally unidentifiable parameter sets (e.g. SEDPNR mu1/mu2)."
+        ),
+    )
+    p_find.add_argument(
+        "--no-scale",
+        dest="scale",
+        action="store_false",
+        help=(
+            "Disable per-column equilibration of the design matrix "
+            "(column scaling is ON by default and improves conditioning)."
+        ),
+    )
+    p_find.set_defaults(func=cmd_find_parameters, scale=True)
+
+    # plot-sample ----------------------------------------------------------
+    p_plot = sub.add_parser(
+        "plot-sample",
+        aliases=["plot_sample"],
+        help="Plot the time series stored in a JSON sample (no model re-run).",
+    )
+    p_plot.add_argument(
+        "sample",
+        help="Sample filename in samples/, or a path to a JSON sample.",
+    )
+    p_plot.add_argument("--no-show", action="store_true",
+                        help="Do not open the matplotlib window after plotting.")
+    p_plot.set_defaults(func=cmd_plot_sample)
+
+    # fit-all ---------------------------------------------------------------
+    p_fitall = sub.add_parser(
+        "fit-all",
+        aliases=["fit_all"],
+        help=("Fit every model in the project to the sample's I(t) curve "
+              "and report per-parameter estimates with standard errors."),
+    )
+    p_fitall.add_argument(
+        "sample",
+        help="Sample filename in samples/, or a path to a JSON sample.",
+    )
+    p_fitall.add_argument(
+        "--loss",
+        choices=["abs", "gls", "rel", "log"],
+        default="abs",
+        help=("Optimisation objective: 'abs' (default) = OLS, raw residual "
+              "(peak-dominated); 'gls' = GLS, inverse-variance/relative "
+              "residual that balances the orders of magnitude an epidemic "
+              "curve spans (alias: 'rel'); 'log' log-residual (growth shape)."),
+    )
+    p_fitall.add_argument(
+        "--fix",
+        action="append",
+        default=[],
+        metavar="NAME=VALUE",
+        help=("Pin a rate to a fixed value, removing it from the fit "
+              "(repeatable). E.g. --fix gamma=0.1 --fix sigma=0.2 breaks the "
+              "beta/gamma collinearity when S stays ~ N (the COVID failure mode)."),
+    )
+    p_fitall.add_argument(
+        "--ridge",
+        type=str,
+        default="auto",
+        metavar="auto|off|LAMBDA",
+        help=("Tikhonov/ridge regularization of the nonlinear fit. 'auto' "
+              "(default) = GCV-selected lambda, engaged only when cond(J'J) "
+              "exceeds the threshold; 'off'/0 = disabled; a number = manual "
+              "lambda. Bounds over-parameterised / rank-deficient models "
+              "(SEDIS/SEDPNR); does NOT separate a collinear pair (use --fix)."),
+    )
+    p_fitall.add_argument(
+        "--no-show", action="store_true",
+        help="Do not open the model-comparison plot window after fitting.",
+    )
+    p_fitall.set_defaults(func=cmd_fit_all)
 
     return parser
 

@@ -80,7 +80,7 @@ def _setup(params: Any) -> tuple[str, Any, list[float], tuple, list[str]]:
         I0 = float(params.initial_infected)
         return ("SEDIS", sedis_ode, [N - E0 - D0 - I0, E0, D0, I0],
                 (params.alpha, params.beta1, params.beta2, params.gamma,
-                 params.mu1, params.mu2, params.mu3, N),
+                 params.mu1, params.mu2, params.mu3),
                 ["S", "E", "D", "I"])
 
     if isinstance(params, ModifSEDISParams):

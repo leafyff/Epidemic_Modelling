@@ -28,6 +28,7 @@ ENV/
 
 # Claude local files
 .claude/
+.obsidian/
 
 # Jupyter notebooks
 .ipynb_checkpoints/
