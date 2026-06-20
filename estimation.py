@@ -55,6 +55,43 @@ inference formula and matches the per-component guaranteed error of
 Nakonechny & Shevchuk (2020, Theorem 38) when the noise budget is
 taken to be ``β = Φ(θ̂) · n_eq / (n_eq - n_param)``.
 
+Batch vs. recursive solve.  Because the discretized system is linear in
+θ, it can be solved two ways (selected by ``method``):
+
+* ``"batch"`` (default) — form the whole system once and solve it
+  directly with non-negative WLS (``_solve_nn_wls``: NNLS + column
+  equilibration + optional GCV ridge). This is the estimator described
+  above.
+* ``"rls"`` — **recursive least squares** (``_solve_nn_rls``): walk the
+  trajectory one *time step* at a time, updating ``θ̂`` and the inverse
+  information matrix ``P`` with the matrix-inversion-lemma recursion
+
+      e_n = b_n − A_n θ̂_{n-1}                         (innovation)
+      K_n = P_{n-1} A_nᵀ (λ I + A_n P_{n-1} A_nᵀ)⁻¹    (Kalman gain)
+      θ̂_n = θ̂_{n-1} + K_n e_n
+      P_n = (P_{n-1} − K_n A_n P_{n-1}) / λ
+
+  where ``A_n`` stacks one forward-Euler equation per compartment at
+  step ``n`` (a block update, fed in *time order*). Two regimes make RLS
+  worthwhile here:
+
+  - **λ = 1 (no forgetting).** With a diffuse prior ``P_0 = I/δ`` the
+    recursion is algebraically the *same* estimator as the batch solve
+    (it equals ridge-WLS with ridge ``δ``; ``δ ≈ 1e-6`` ⇒ negligible).
+    This makes RLS a streaming, ``O(n·p²)`` cross-check of the batch
+    result that never forms the full ``A`` — useful for long / online
+    data.
+  - **λ < 1 (exponential forgetting).** Older steps are down-weighted
+    with memory ``≈ 1/(1−λ)`` steps, so ``θ̂_n`` *tracks time-varying
+    rates*. Real epidemics have a transmission rate that changes with
+    interventions and behaviour; the constant-rate batch fit cannot see
+    this, but RLS returns the whole trajectory ``θ̂(t)`` (``track=True``).
+
+  Classic RLS is unconstrained, so the reported estimate (and every
+  point of the tracked path) is projected onto ``θ ≥ 0`` exactly as
+  NNLS would — a component that wants to go negative is pinned to zero
+  and read as "data is consistent with zero / unidentifiable".
+
 Supported models (one builder per model, each producing the A, b, names
 triple for the linear system):
 
@@ -593,6 +630,135 @@ def _solve_nn_wls(
 
 
 # ---------------------------------------------------------------------------
+# Recursive (online) least squares
+# ---------------------------------------------------------------------------
+
+def _solve_nn_rls(
+    A: np.ndarray,
+    b: np.ndarray,
+    weights: np.ndarray,
+    n_compartments: int,
+    forgetting: float = 1.0,
+    delta: float = 1.0e-6,
+    scale: bool = True,
+    track: bool = False,
+) -> tuple[np.ndarray, np.ndarray, float, float, np.ndarray | None]:
+    """Solve the forward-Euler system recursively, one time step at a time.
+
+    Same whitening (``W^{1/2}``) and column equilibration as
+    ``_solve_nn_wls`` — so for ``forgetting == 1`` this returns the *same*
+    estimate as the batch solver (up to the negligible ``δ`` prior) — but
+    instead of one direct solve it runs the Kalman-gain RLS recursion
+
+        e_n = b_n − A_n θ̂_{n-1}
+        K_n = P A_nᵀ (λ I + A_n P A_nᵀ)⁻¹
+        θ̂_n = θ̂_{n-1} + K_n e_n
+        P   ← (P − K_n A_n P) / λ
+
+    over the trajectory. ``A_n`` is the block of one forward-Euler equation
+    per compartment evaluated at step ``n``; the rows produced by the
+    builders are compartment-major, so they are reordered into time-major
+    blocks first (this is what makes the forgetting factor down-weight by
+    *time*, not by compartment).
+
+    Parameters
+    ----------
+    forgetting
+        Exponential forgetting factor ``λ ∈ (0, 1]``. ``1.0`` keeps all
+        history (≡ batch). ``λ < 1`` gives a sliding memory of ``≈ 1/(1−λ)``
+        steps so the estimate tracks time-varying rates.
+    delta
+        Diffuse-prior scale: ``P_0 = I / δ``. A small ``δ`` (default
+        ``1e-6``) makes the prior negligible; it doubles as a tiny ridge
+        that keeps ``P`` well-defined for rank-deficient designs.
+    scale
+        Column equilibration of the whitened design (default on), identical
+        to the batch solver.
+    track
+        If ``True`` also return the back-transformed, non-negativity-
+        projected estimate after every step — the parameter trajectory
+        ``θ̂(t)`` (shape ``(n_steps, n_param)``).
+
+    Returns
+    -------
+    ``(theta, cov, sigma2, cond, path)`` mirroring ``_solve_nn_wls`` (minus
+    the ridge λ, which RLS replaces with the ``δ`` prior). ``path`` is the
+    trajectory array when ``track`` is set, else ``None``. ``cov`` is built
+    from the final information matrix ``P``; under ``λ < 1`` it reflects the
+    *effective* (recent) sample size, so standard errors are larger.
+    """
+    n_eq, n_param = A.shape
+    if not (0.0 < forgetting <= 1.0):
+        raise ValueError(
+            f"forgetting factor must be in (0, 1], got {forgetting!r}."
+        )
+    if delta <= 0.0:
+        raise ValueError(f"diffuse-prior delta must be > 0, got {delta!r}.")
+    n_blocks = n_eq // n_compartments
+    if n_blocks * n_compartments != n_eq:
+        raise ValueError(
+            f"Equation count {n_eq} is not divisible by the {n_compartments} "
+            f"compartment(s); cannot group the RLS time blocks."
+        )
+
+    sqrt_w = np.sqrt(weights)
+    A_w    = sqrt_w[:, None] * A
+    b_w    = sqrt_w * b
+
+    # --- column equilibration (identical to the batch solver) ----------------
+    if scale:
+        col_norms = np.linalg.norm(A_w, axis=0)
+        col_norms[col_norms < 1e-300] = 1.0
+        D = 1.0 / col_norms
+    else:
+        D = np.ones(n_param)
+    A_s = A_w * D
+
+    # raw (unscaled) condition number — same difficulty diagnostic as batch
+    s_raw   = np.linalg.svd(A_w, compute_uv=False)
+    pos_raw = s_raw[s_raw > 0]
+    cond    = float((s_raw.max() / pos_raw.min()) ** 2) if pos_raw.size else np.inf
+
+    # --- reorder compartment-major rows into time-major blocks ---------------
+    # builder row for (compartment c, step j) sits at c*n_blocks + j; block j
+    # then gathers one equation per compartment, all evaluated at step j.
+    perm     = (np.arange(n_compartments)[None, :] * n_blocks
+                + np.arange(n_blocks)[:, None]).ravel()
+    A_blocks = A_s[perm].reshape(n_blocks, n_compartments, n_param)
+    b_blocks = b_w[perm].reshape(n_blocks, n_compartments)
+
+    # --- RLS recursion in scaled coordinates (diffuse prior P_0 = I/δ) -------
+    theta_s = np.zeros(n_param)
+    P       = np.eye(n_param) / delta
+    lam     = float(forgetting)
+    eye_m   = np.eye(n_compartments)
+    path    = np.empty((n_blocks, n_param)) if track else None
+
+    for j in range(n_blocks):
+        Aj  = A_blocks[j]                       # (m, p)
+        bj  = b_blocks[j]                       # (m,)
+        PAt = P @ Aj.T                          # (p, m)
+        S   = lam * eye_m + Aj @ PAt            # (m, m) innovation covariance
+        K   = np.linalg.solve(S, PAt.T).T       # (p, m) gain = P Aᵀ S⁻¹
+        theta_s = theta_s + K @ (bj - Aj @ theta_s)
+        P   = (P - K @ (Aj @ P)) / lam
+        P   = 0.5 * (P + P.T)                   # guard symmetry against drift
+        if track:
+            path[j] = np.maximum(D * theta_s, 0.0)
+
+    theta = np.maximum(D * theta_s, 0.0)        # back-transform + non-negativity
+
+    # --- residual scale on the whitened system, like the batch solver --------
+    r_w    = b_w - A_w @ theta
+    dof    = max(n_eq - n_param, 1)
+    sigma2 = float(np.sum(r_w ** 2) / dof)
+
+    # --- covariance from the final information matrix P (scaled -> original) --
+    cov = sigma2 * (D[:, None] * P * D[None, :])
+    return theta, cov, sigma2, cond, path
+
+
+# ---------------------------------------------------------------------------
 # Extremum detection via the finite-difference derivative
 # ---------------------------------------------------------------------------
 
@@ -736,6 +902,10 @@ def estimate_parameters(
     weighting: Any = "auto",
     ridge: Any = "auto",
     scale: bool = True,
+    method: str = "batch",
+    forgetting: float = 1.0,
+    rls_delta: float = 1.0e-6,
+    track: bool = False,
 ) -> dict[str, Any]:
     """Estimate the discrete-model parameters via non-negative GLS.
 
@@ -756,15 +926,33 @@ def estimate_parameters(
         original NNLS estimator.
         ``np.ndarray`` — custom per-equation weights.
     ridge
-        Tikhonov / ridge regularization. A float (``0`` = off, ``>0`` =
-        manual ``λ``) or ``"auto"`` (default) — then ``λ`` is chosen by
-        Generalized Cross-Validation, engaged only when the raw condition
-        number exceeds ``AUTO_RIDGE_COND`` (well-conditioned problems are
-        left untouched). Bounds ill-conditioned / unidentifiable sets.
+        Tikhonov / ridge regularization (``method="batch"`` only). A float
+        (``0`` = off, ``>0`` = manual ``λ``) or ``"auto"`` (default) — then
+        ``λ`` is chosen by Generalized Cross-Validation, engaged only when
+        the raw condition number exceeds ``AUTO_RIDGE_COND``
+        (well-conditioned problems are left untouched). Bounds
+        ill-conditioned / unidentifiable sets.
     scale
         If ``True`` (default), equilibrate the columns of the whitened
         design matrix to unit norm before solving — an exact
         reparameterisation that sharply lowers the condition number.
+    method
+        ``"batch"`` (default) — one direct non-negative WLS solve
+        (``_solve_nn_wls``). ``"rls"`` — recursive least squares
+        (``_solve_nn_rls``): the same estimator walked one time step at a
+        time. With ``forgetting == 1`` it reproduces the batch estimate;
+        with ``forgetting < 1`` it tracks time-varying rates.
+    forgetting
+        RLS exponential forgetting factor ``λ ∈ (0, 1]`` (used only when
+        ``method="rls"``). ``λ < 1`` gives a sliding memory of
+        ``≈ 1/(1−λ)`` steps. Setting ``λ < 1`` implies ``track``.
+    rls_delta
+        RLS diffuse-prior scale ``P_0 = I / δ`` (used only when
+        ``method="rls"``). Small ``δ`` ⇒ negligible prior.
+    track
+        When ``method="rls"``, also record the parameter trajectory
+        ``θ̂(t)`` (returned as ``param_path`` / ``path_time`` /
+        ``path_names``). Forced on whenever ``forgetting < 1``.
 
     Returns
     -------
@@ -774,10 +962,14 @@ def estimate_parameters(
         where the generator rates are stored in the sample), ``rmse``
         (unweighted residual RMSE), ``sigma2`` (estimated WLS residual
         scale), ``cond`` (2-norm condition number of the raw ``AᵀWA``),
-        ``ridge`` (λ used), ``scaled`` (whether column scaling was on),
+        ``ridge`` (λ used; ``0`` for RLS), ``scaled`` (whether column
+        scaling was on), ``method`` (human-readable estimator label),
+        ``method_key`` (``"batch"`` / ``"rls"``), ``forgetting`` (λ),
         ``extrema`` (per-compartment finite-difference extremum points),
         ``weighting`` (string label of the strategy actually
-        used), ``n_points``, ``dt`` (mean step size).
+        used), ``n_points``, ``dt`` (mean step size). When an RLS
+        trajectory is recorded it also carries ``param_path`` (list of
+        per-step estimate lists), ``path_time`` and ``path_names``.
 
     Notes
     -----
@@ -814,10 +1006,32 @@ def estimate_parameters(
     compartments = _MODEL_COMPARTMENTS[model]
 
     weights, weighting_label = _compute_weights(A, b, compartments, weighting)
-    theta, cov, sigma2, cond, lam = _solve_nn_wls(A, b, weights, ridge=ridge, scale=scale)
+
+    method_key = str(method).strip().lower()
+    path: np.ndarray | None = None
+    if method_key == "rls":
+        do_track = bool(track) or forgetting < 1.0
+        theta, cov, sigma2, cond, path = _solve_nn_rls(
+            A, b, weights, len(compartments),
+            forgetting=forgetting, delta=rls_delta, scale=scale, track=do_track,
+        )
+        lam        = 0.0          # RLS uses the δ prior, not an explicit ridge
+        ridge_auto = False
+        method_label = (
+            f"recursive LS (RLS, forgetting lambda={forgetting:g}, "
+            f"diffuse prior delta={rls_delta:g})"
+        )
+    elif method_key == "batch":
+        theta, cov, sigma2, cond, lam = _solve_nn_wls(A, b, weights, ridge=ridge, scale=scale)
+        ridge_auto = isinstance(ridge, str) and ridge.strip().lower() in ("auto", "gcv")
+        method_label = "batch (direct non-negative WLS)"
+    else:
+        raise ValueError(
+            f"Unknown method {method!r}; expected 'batch' or 'rls'."
+        )
+
     se                       = np.sqrt(np.maximum(np.diag(cov), 0.0))
     rmse                     = float(np.sqrt(np.mean((A @ theta - b) ** 2)))
-    ridge_auto               = isinstance(ridge, str) and ridge.strip().lower() in ("auto", "gcv")
 
     estimates   = dict(zip(names, [float(v) for v in theta]))
     std_errors  = dict(zip(names, [float(s) for s in se]))
@@ -836,7 +1050,7 @@ def estimate_parameters(
             if ex:
                 extrema[c] = ex
 
-    return {
+    result: dict[str, Any] = {
         "model"      : model,
         "estimates"  : estimates,
         "std_errors" : std_errors,
@@ -847,11 +1061,24 @@ def estimate_parameters(
         "ridge"      : float(lam),
         "ridge_auto" : ridge_auto,
         "scaled"     : bool(scale),
+        "method"     : method_label,
+        "method_key" : method_key,
+        "forgetting" : float(forgetting),
+        "rls_delta"  : float(rls_delta),
         "extrema"    : extrema,
         "weighting"  : weighting_label,
         "n_points"   : int(len(t)),
         "dt"         : float(np.mean(np.diff(t))),
     }
+
+    # Recorded RLS parameter trajectory θ̂(t): one row per forward-Euler step,
+    # time-stamped at the left node t_j where the step's state is read.
+    if path is not None:
+        result["param_path"] = [[float(v) for v in row] for row in path]
+        result["path_time"]  = [float(x) for x in t[:-1]]
+        result["path_names"] = list(names)
+
+    return result
 
 
 def print_summary(result: dict[str, Any], source: str) -> None:
@@ -861,7 +1088,10 @@ def print_summary(result: dict[str, Any], source: str) -> None:
     se    = result["std_errors"]
     true  = result["true_params"]
 
-    if result.get("ridge", 0.0) > 0:
+    is_rls = result.get("method_key") == "rls"
+    if is_rls:
+        reg = f"RLS diffuse prior delta={result.get('rls_delta', 0.0):.1e}"
+    elif result.get("ridge", 0.0) > 0:
         src = "auto/GCV" if result.get("ridge_auto") else "manual"
         reg = f"ridge lambda={result['ridge']:.2e} ({src})"
     else:
@@ -870,6 +1100,7 @@ def print_summary(result: dict[str, Any], source: str) -> None:
     print(f"  Source file                  : {source}")
     print(f"  Number of points             : {result['n_points']}")
     print(f"  Step size dt                 : {result['dt']:.6f}")
+    print(f"  Estimator                    : {result.get('method', 'batch')}")
     print(f"  Weighting                    : {result['weighting']}")
     print(f"  Column scaling               : {'on' if result.get('scaled', False) else 'off'}")
     print(f"  Regularization               : {reg}")
@@ -899,6 +1130,25 @@ def print_summary(result: dict[str, Any], source: str) -> None:
                 f"{'-':>14} {'-':>12}"
             )
     print(f"  Residual RMSE (unweighted)   : {result['rmse']:.4e}")
+    if is_rls and result.get("forgetting", 1.0) < 1.0:
+        print("  (RLS with forgetting: the Estimate column is the final, "
+              "most-recent estimate; see the tracked range below.)")
+
+    # RLS parameter trajectory: report the stabilised range over the second
+    # half of the path (the first half still carries the diffuse-prior
+    # transient) so the reader sees how much each rate drifts in time.
+    path = result.get("param_path")
+    if path:
+        arr   = np.asarray(path, dtype=float)
+        names = result.get("path_names", list(result["estimates"]))
+        half  = arr[len(arr) // 2:]
+        tt    = result.get("path_time")
+        span  = f" over t in [{tt[len(tt) // 2]:.2f}, {tt[-1]:.2f}]" if tt else ""
+        kind  = "drift" if result.get("forgetting", 1.0) < 1.0 else "convergence"
+        print(f"\n  RLS parameter {kind} (min..max{span}):")
+        for k, nm in enumerate(names):
+            lo, hi = float(half[:, k].min()), float(half[:, k].max())
+            print(f"    {nm:<10} {lo:>14.6f} .. {hi:<14.6f}")
 
     extrema = result.get("extrema", {})
     if extrema:
@@ -909,14 +1159,93 @@ def print_summary(result: dict[str, Any], source: str) -> None:
                       f"  value={e['value']:>16,.4f}")
 
 
+def plot_parameter_path(
+    result: dict[str, Any],
+    source: str,
+    suffix: str = "_rls_track",
+    show: bool = False,
+) -> str:
+    """Plot the recorded RLS parameter trajectory ``θ̂(t)`` and save a PNG.
+
+    Each estimated rate is drawn versus time; where the sample stores the
+    generating value (full-state synthetic samples) a dashed reference line
+    is added in the same colour. With ``forgetting < 1`` the curves show how
+    each rate is *tracked* through the trajectory; with ``forgetting == 1``
+    they show the recursion *converging* to the batch estimate.
+
+    Matplotlib is imported lazily so the numerics in this module stay usable
+    without a plotting backend. Returns the saved figure path.
+    """
+    if "param_path" not in result:
+        raise ValueError(
+            "result has no 'param_path'; run estimate_parameters with "
+            "method='rls' and track=True (or forgetting < 1)."
+        )
+
+    import matplotlib.pyplot as plt              # lazy: keep numerics import-light
+    from drawing import FIGURE_DPI, FIGURE_SIZE, ensure_figs_dir
+
+    arr   = np.asarray(result["param_path"], dtype=float)
+    tt    = np.asarray(result["path_time"], dtype=float)
+    names = result.get("path_names", list(result["estimates"]))
+    true  = result.get("true_params", {})
+    lam   = result.get("forgetting", 1.0)
+
+    cmap = plt.get_cmap("tab10")
+    fig, ax = plt.subplots(figsize=FIGURE_SIZE, dpi=FIGURE_DPI)
+    for k, nm in enumerate(names):
+        color = cmap(k % 10)
+        ax.plot(tt, arr[:, k], lw=2.0, color=color, label=nm)
+        if nm in true:
+            ax.axhline(true[nm], ls="--", lw=1.0, color=color, alpha=0.6)
+
+    mode = (f"forgetting λ={lam:g} (tracking)" if lam < 1.0
+            else "λ=1 (convergence to batch)")
+    ax.set_title(f"RLS parameter trajectory — {result['model']}  [{mode}]\n"
+                 f"dashed = generating value (where known)",
+                 fontsize=13, fontweight="bold")
+    ax.set_xlabel("Day", fontsize=11)
+    ax.set_ylabel("Estimated rate", fontsize=11)
+    ax.grid(True, ls="--", lw=0.5, alpha=0.7)
+    ax.legend(fontsize=8.5, framealpha=0.9, ncol=2)
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    fig.tight_layout()
+
+    ensure_figs_dir()
+    stem = os.path.splitext(os.path.basename(source))[0]
+    out  = os.path.join("figs", f"{stem}{suffix}.png")
+    fig.savefig(out, dpi=FIGURE_DPI, bbox_inches="tight")
+    if not show:                       # keep open so a caller can plt.show()
+        plt.close(fig)
+    return out
+
+
 def find_parameters(
     path: str,
     weighting: Any = "auto",
     ridge: Any = "auto",
     scale: bool = True,
+    method: str = "batch",
+    forgetting: float = 1.0,
+    rls_delta: float = 1.0e-6,
+    track: bool = False,
+    show: bool = False,
 ) -> dict[str, Any]:
-    """High-level helper used by the CLI: load, estimate, print, return."""
+    """High-level helper used by the CLI: load, estimate, print, return.
+
+    When ``method="rls"`` records a trajectory (``track`` or
+    ``forgetting < 1``), a ``θ̂(t)`` plot is saved to ``figs/`` and its path
+    is returned under ``result["plot_path"]``.
+    """
     sample = load_sample(path)
-    result = estimate_parameters(sample, weighting=weighting, ridge=ridge, scale=scale)
+    result = estimate_parameters(
+        sample, weighting=weighting, ridge=ridge, scale=scale,
+        method=method, forgetting=forgetting, rls_delta=rls_delta, track=track,
+    )
     print_summary(result, path)
+    if "param_path" in result:
+        plot_path = plot_parameter_path(result, path, show=show)
+        result["plot_path"] = plot_path
+        print(f"\nSaved RLS trajectory plot -> {plot_path}")
     return result

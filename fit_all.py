@@ -4,6 +4,14 @@ Public API: ``fit_all_models(path)`` returns the per-model fit result
 (estimates, standard errors, fitted curve, RMSE) and saves an overlay
 plot of every model's fit to ``figs/<stem>_all_models.png``.
 
+These least-squares fits return a *constant* rate per model. The optional
+``ekf=...`` argument adds a post-fit **extended Kalman filter** pass
+(``kalman.ekf_track_transmission``, seeded from the chosen model's LS fit)
+that recovers a *time-varying* transmission rate ``β̂(t)`` from the same
+``I(t)`` series — the nonlinear recursive analogue of the RLS tracking in
+``estimation.py``. See ``_run_ekf_track`` / ``plot_ekf_track`` and
+``Documentation.md``.
+
 How the fits are set up
 -----------------------
 Real samples only contain ``I`` (the actively spreading / infectious
@@ -57,6 +65,7 @@ from scipy.optimize import differential_evolution, least_squares
 
 from drawing import FIGURE_DPI, FIGURE_SIZE, ensure_figs_dir
 from estimation import _gcv_lambda, find_extrema
+from kalman import ekf_track_transmission
 from models.SEDIS import sedis_ode
 from models.SEDPNR import sedpnr_ode
 from models.SEIR import seir_ode
@@ -406,6 +415,101 @@ def _fit_one(spec: dict[str, Any], t: np.ndarray, N: float,
 
 
 # ---------------------------------------------------------------------------
+# EKF transmission-rate tracking (post-fit)
+# ---------------------------------------------------------------------------
+
+def _run_ekf_track(sample: dict[str, Any], result: dict[str, Any], N: float,
+                   t: np.ndarray, I_obs: np.ndarray,
+                   q_rel: float, r_rel: float) -> dict[str, Any]:
+    """Run the EKF on one already-fitted model, seeded from its LS estimate.
+
+    ``result`` is the per-model dict from ``_fit_one`` (carries ``theta`` =
+    ``[rates..., latent...]``). The model spec is rebuilt from the registry so
+    the EKF can forward-simulate the same ODE.
+    """
+    spec = next(s for s in _registry(N) if s["name"] == result["name"])
+    nr   = len(spec["rates"])
+    ls_rates  = list(result["theta"][:nr])
+    ls_latent = list(result["theta"][nr:])
+    ekf = ekf_track_transmission(spec, t, N, I_obs, ls_rates, ls_latent,
+                                 q_rel=q_rel, r_rel=r_rel)
+    ekf["ls_rmse"]  = float(result["rmse"])          # constant-rate baseline
+    ekf["ls_curve"] = list(result["curve"])
+    return ekf
+
+
+def plot_ekf_track(ekf: dict[str, Any], sample: dict[str, Any], path: str,
+                   plot_suffix: str = "_ekf_track", show: bool = False) -> str:
+    """Two-panel EKF figure: I(t) fits (top) and the tracked rate β̂(t) (bottom)."""
+    t     = np.asarray(ekf["time"], dtype=float)
+    I_obs = np.asarray(sample["compartments"]["I"], dtype=float)
+    beta  = np.asarray(ekf["beta_path"], dtype=float)
+    se    = np.asarray(ekf["beta_se"], dtype=float)
+
+    fig, (ax1, ax2) = plt.subplots(
+        2, 1, figsize=(FIGURE_SIZE[0], FIGURE_SIZE[1] * 1.5), dpi=FIGURE_DPI,
+        sharex=True, gridspec_kw={"height_ratios": [2, 1]},
+    )
+    ax1.scatter(t, I_obs, color="#222222", s=18, zorder=6, label="Observed I(t)")
+    ax1.plot(t, ekf["ls_curve"], lw=2.0, color="#1f77b4", ls="--",
+             label=f"LS constant {ekf['rate']} (RMSE {ekf['ls_rmse']:,.1f})")
+    ax1.plot(t, ekf["curve"], lw=2.0, color="#d62728",
+             label=f"EKF time-varying {ekf['rate']} (RMSE {ekf['rmse']:,.1f})")
+    ax1.set_title(f"EKF transmission tracking — {ekf['name']}\n"
+                  f"(only I observed; q_rel={ekf['q_rel']:g}, r_rel={ekf['r_rel']:g})",
+                  fontsize=13, fontweight="bold")
+    ax1.set_ylabel("Infected I(t)", fontsize=11)
+    ax1.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f"{int(x):,}"))
+    ax1.grid(True, ls="--", lw=0.5, alpha=0.7)
+    ax1.legend(fontsize=9, framealpha=0.9)
+    ax1.spines["top"].set_visible(False)
+    ax1.spines["right"].set_visible(False)
+
+    ax2.plot(t, beta, lw=2.0, color="#d62728", label=f"EKF {ekf['rate']}(t)")
+    ax2.fill_between(t, beta - se, beta + se, color="#d62728", alpha=0.15,
+                     label="±1σ")
+    ax2.axhline(ekf["beta_ls"], ls="--", lw=1.2, color="#1f77b4",
+                label=f"LS constant {ekf['rate']}={ekf['beta_ls']:.4g}")
+    ax2.set_xlabel("Day", fontsize=11)
+    ax2.set_ylabel(f"Estimated {ekf['rate']}", fontsize=11)
+    ax2.grid(True, ls="--", lw=0.5, alpha=0.7)
+    ax2.legend(fontsize=8.5, framealpha=0.9, ncol=3)
+    ax2.spines["top"].set_visible(False)
+    ax2.spines["right"].set_visible(False)
+    fig.tight_layout()
+
+    ensure_figs_dir()
+    stem = os.path.splitext(os.path.basename(path))[0]
+    out  = os.path.join("figs", f"{stem}{plot_suffix}.png")
+    fig.savefig(out, dpi=FIGURE_DPI, bbox_inches="tight")
+    if not show:
+        plt.close(fig)
+    return out
+
+
+def print_ekf_report(ekf: dict[str, Any]) -> None:
+    """Print the EKF tracking effectiveness summary for one model."""
+    print("\n" + "=" * 70)
+    print(f"EKF transmission tracking: {ekf['name']}  (tracked rate: {ekf['rate']})")
+    print("=" * 70)
+    if not ekf["ok"]:
+        print("  Filter diverged (non-finite state) — try a smaller --ekf-q.")
+        return
+    drift   = ekf["beta_hi"] - ekf["beta_lo"]
+    med_se  = float(np.median(ekf["beta_se"]))
+    verdict = ("time variation DETECTED" if drift > 2.0 * med_se
+               else "consistent with a constant rate")
+    print(f"  Process noise q_rel / obs noise r_rel : {ekf['q_rel']:g} / {ekf['r_rel']:g}")
+    print(f"  LS constant {ekf['rate']:<6}                  : {ekf['beta_ls']:.6g}")
+    print(f"  EKF {ekf['rate']:<6} final / range (2nd half) : "
+          f"{ekf['beta_final']:.6g}  [{ekf['beta_lo']:.6g}, {ekf['beta_hi']:.6g}]")
+    print(f"  Tracked drift vs median 1-sigma       : {drift:.4g} vs {med_se:.4g}"
+          f"  -> {verdict}")
+    print(f"  RMSE  constant-LS -> time-varying EKF : "
+          f"{ekf['ls_rmse']:,.2f} -> {ekf['rmse']:,.2f}")
+
+
+# ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
 
@@ -414,16 +518,25 @@ def fit_all_models(path: str, save_plot: bool = True,
                    loss: str = "abs",
                    fixed: dict[str, float] | None = None,
                    ridge: Any = "auto",
+                   ekf: str | None = None,
+                   ekf_q: float = 0.03,
+                   ekf_r: float = 0.05,
                    show: bool = False) -> dict[str, Any]:
     """Fit every model to the sample's I(t); save an overlay plot.
 
     ``loss`` (``"abs"`` = OLS default / ``"gls"`` = GLS / ``"rel"`` alias /
     ``"log"``) selects the optimisation objective and ``fixed`` pins named
     rates (see ``_fit_one``). When ``show`` is true the overlay figure is left
-    open (not closed) so a caller can ``plt.show()`` it in a window. Returns
-    ``{"sample", "results", "plot_path", "loss", "fixed", "ridge"}``.
-    ``results`` is sorted by RMSE ascending; each entry carries ``aicc`` and
-    ``trustworthy``.
+    open (not closed) so a caller can ``plt.show()`` it in a window.
+
+    ``ekf`` enables a post-fit **extended Kalman filter** pass that tracks a
+    *time-varying* transmission rate ``β̂(t)`` (or ``α̂(t)``) from the I(t)
+    series for one model, seeded from that model's LS fit: pass a model name,
+    or ``"best"`` for the AICc-best identifiable model. ``ekf_q`` (process
+    noise) and ``ekf_r`` (observation noise) tune the filter. Returns
+    ``{"sample", "results", "plot_path", "loss", "fixed", "ridge", "ekf"}``;
+    ``results`` is sorted by RMSE ascending and each entry carries ``aicc``
+    and ``trustworthy``. ``ekf`` is the tracking result dict (or ``None``).
     """
     fixed = fixed or {}
     with open(path, "r", encoding="utf-8") as f:
@@ -503,8 +616,31 @@ def fit_all_models(path: str, save_plot: bool = True,
             plt.close(fig)
         print(f"\nSaved comparison plot -> {plot_path}")
 
+    # ---- optional EKF transmission-rate tracking (post-fit) -----------------
+    ekf_result: dict[str, Any] | None = None
+    if ekf is not None:
+        if str(ekf).strip().lower() in ("best", "__best__", ""):
+            chosen = best_aicc["name"]
+        else:
+            chosen = str(ekf)
+            by_name = {r["name"].lower(): r for r in results}
+            if chosen.lower() not in by_name:
+                raise ValueError(
+                    f"--ekf model {chosen!r} not among the fitted models: "
+                    f"{', '.join(r['name'] for r in results)}."
+                )
+            chosen = by_name[chosen.lower()]["name"]
+        chosen_result = next(r for r in results if r["name"] == chosen)
+        ekf_result = _run_ekf_track(sample, chosen_result, N, t, I_obs,
+                                    q_rel=ekf_q, r_rel=ekf_r)
+        print_ekf_report(ekf_result)
+        if save_plot:
+            ekf_plot = plot_ekf_track(ekf_result, sample, path, show=show)
+            ekf_result["plot_path"] = ekf_plot
+            print(f"Saved EKF tracking plot -> {ekf_plot}")
+
     return {"sample": sample, "results": results, "plot_path": plot_path,
-            "loss": loss, "fixed": fixed, "ridge": ridge}
+            "loss": loss, "fixed": fixed, "ridge": ridge, "ekf": ekf_result}
 
 
 def print_se_report(result: dict[str, Any]) -> None:

@@ -109,10 +109,15 @@ A short taste of the CLI:
 python main.py run-all                                 # run every model with defaults
 python main.py run SIR --param beta=0.4 --param gamma=0.12   # run one model with overrides
 python main.py sample SIR SIR_sample1.json             # save a JSON sample to samples/
+python main.py find-parameters SIR_sample1.json        # recover rates from a full-state sample (batch NNLS, default)
+python main.py find-parameters SIR_sample1.json --method rls --forgetting 0.97   # recursive LS: track a time-varying rate
+python main.py fit-all COVID_Germany_2020.json         # fit all 8 models to an I(t) curve (OLS, default)
+python main.py fit-all COVID_Germany_2020.json --loss gls   # same, with the GLS objective
+python main.py fit-all COVID_Germany_2020.json --ekf   # + extended Kalman filter: track a time-varying beta(t)
 python main.py --help                                  # full CLI help
 ```
 
-`run` / `run-all` write PNG figures to `figs/` and open them in matplotlib; `sample` writes JSON to `samples/`. See [`Documentation.md`](Documentation.md) for everything else.
+`run` / `run-all` / `fit-all` write PNG figures to `figs/` and open them in matplotlib (pass `--no-show` to suppress the window); `sample` writes JSON to `samples/`. `find-parameters` recovers the rate parameters from a full-state sample by least squares — a single **batch** non-negative WLS solve by default, or **recursive least squares** (`--method rls`) that can additionally track a time-varying rate `θ̂(t)`. `fit-all` fits every model to an `I(t)`-only curve by nonlinear least squares; its `--ekf` flag adds an **extended Kalman filter** that tracks a time-varying transmission rate `β(t)` from the infected curve (recovering, e.g., the lockdown signature in the COVID-2020 data that a constant-rate fit cannot). See [`Documentation.md`](Documentation.md) for everything else.
 
 ## Output Figures
 

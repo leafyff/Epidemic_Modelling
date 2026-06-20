@@ -14,7 +14,8 @@ and that `numpy`, `scipy` and `matplotlib` are installed
 ├── main.py             # Console entry point (argparse-based CLI)
 ├── drawing.py          # Figure constants + plotting / solver helpers
 ├── sampling.py         # Library: create_sample(params, filename, n_points)
-├── estimation.py       # Library: forward-Euler least-squares parameter estimation
+├── estimation.py       # Library: forward-Euler least-squares parameter estimation (batch + RLS)
+├── kalman.py           # Library: extended Kalman filter for time-varying beta(t) tracking
 ├── plot_sample.py      # Library: render a JSON sample as a matplotlib figure
 ├── models/             # One file per epidemic model — each fully self-contained
 │   ├── __init__.py     # Re-exports every *Params, *_ode and model_*
@@ -210,7 +211,12 @@ saved PNG.
 `find-parameters` reads a JSON sample, applies the **forward-Euler**
 discretization of the model's ODE system, and solves the resulting
 over-determined linear system in the *non-negative* least-squares sense
-(`scipy.optimize.nnls`) to recover the rate parameters.
+(`scipy.optimize.nnls`) to recover the rate parameters. The system is
+linear in the rates, so it can be solved either in one **batch** pass
+(default) or **recursively** one time step at a time
+(`--method rls`) — the recursive form additionally tracks a
+*time-varying* rate `θ̂(t)` (see
+[Recursive least squares](#recursive-least-squares---method-rls--online-estimation-and-tracking-time-varying-rates) below).
 
 Non-negative least squares is used because every rate constant in these
 ODE models is a `1/time` quantity that must satisfy `θ ≥ 0` — a
@@ -317,6 +323,99 @@ pseudoinverse automatically.
 > COVID, where `S≈N`), GCV correctly applies almost no ridge — the data simply
 > cannot separate them. The honest fix there is to **fix one rate** (see
 > `fit-all --fix` below) so the other becomes identifiable.
+
+### Recursive least squares (`--method rls`) — online estimation and tracking time-varying rates
+
+The forward-Euler discretization makes the estimation problem **linear in
+the rate parameters** (`A·θ = b`), and recursive least squares (RLS) is
+precisely the *online* solver for a linear least-squares system. Instead of
+forming the whole system once and solving it (the `batch` default), RLS
+walks the trajectory **one time step at a time**, updating the estimate
+`θ̂` and the inverse information matrix `P` with the Kalman-gain recursion
+
+```text
+e_n = b_n − A_n θ̂_{n-1}                          (innovation / prediction error)
+K_n = P A_nᵀ (λ I + A_n P A_nᵀ)⁻¹                (gain)
+θ̂_n = θ̂_{n-1} + K_n e_n                          (estimate update)
+P   ← (P − K_n A_n P) / λ                         (information update)
+```
+
+where `A_n` stacks one forward-Euler equation **per compartment** at step
+`n` (a block update, fed in *time order*). It is enabled with
+`--method rls`:
+
+| Flag | Default | Effect |
+|---|---|---|
+| `--method batch\|rls` | `batch` | `batch` = one direct non-negative WLS solve; `rls` = the same estimator run recursively. |
+| `--forgetting LAMBDA` | `1.0` | Exponential forgetting factor `λ ∈ (0,1]`. `1.0` keeps all history; `λ < 1` gives a sliding memory of `≈ 1/(1−λ)` steps that **tracks time-varying rates** (and forces trajectory tracking). |
+| `--rls-delta DELTA` | `1e-6` | Diffuse-prior scale `P₀ = I/δ`. Small `δ` ⇒ negligible prior (and a tiny ridge that keeps `P` well-defined). |
+| `--track` | off | Record and plot the trajectory `θ̂(t)` even when `λ = 1` (shows the recursion *converging* to the batch estimate). Always on when `λ < 1`. |
+
+Why this is worth having (two regimes):
+
+**1. `λ = 1` — a streaming cross-check, identical to batch.** With the
+diffuse prior, the recursion is algebraically the *same* estimator as the
+batch solve (it equals ridge-WLS with ridge `δ`; at `δ = 1e-6` the bias is
+negligible). It reproduces the batch numbers to ~4 significant figures
+while never forming the full `A` — an `O(n·p²)` streaming/online estimator
+suited to long or incrementally-arriving data:
+
+```bash
+# RLS with no forgetting -> matches `find-parameters --method batch`
+python main.py find-parameters SEDIS_sample1.json --method rls
+# Add --track to also save figs/<sample>_rls_track.png showing convergence
+python main.py find-parameters SEDIS_sample1.json --method rls --track
+```
+
+**2. `λ < 1` — tracking a time-varying rate (the real payoff).** A constant
+parameter is a modelling assumption, not a fact: real epidemics have a
+transmission rate that changes with interventions and behaviour. The batch
+fit can only return a single constant; RLS with forgetting returns the
+whole trajectory `θ̂(t)` and a plot to `figs/<sample>_rls_track.png`:
+
+```bash
+python main.py find-parameters my_full_state_sample.json --method rls --forgetting 0.97
+```
+
+On a synthetic SIR trajectory whose transmission rate steps from
+`β = 0.30` to `β = 0.12` on day 30 (an "intervention"), the **batch** fit
+returns a meaningless average `β ≈ 0.18` that matches neither phase, while
+**RLS tracks the change**:
+
+```text
+  day      I(t)   beta_hat  beta_true
+   20       457   0.3000    0.30
+   28      1570   0.3000    0.30
+   32      1885   0.2050    0.12     <- step at day 30, estimate starts moving
+   40      1492   0.1351    0.12
+   55       799   0.1214    0.12     <- settled onto the new value
+```
+
+The print-out adds a **tracked-range** block (min..max of each rate over
+the second half of the trajectory, past the diffuse-prior transient), and
+the saved plot draws each `θ̂(t)` against the generating value where known.
+
+Caveats specific to RLS:
+
+* **No signal ⇒ no update.** A rate is only identifiable where its design
+  column is non-zero. If `I(t) ≈ 0` (the epidemic has burned out) the
+  `β·S·I/N` term carries no information and RLS correctly *holds* its last
+  estimate rather than drifting — put the change you want to detect inside
+  the active-transmission window.
+* **Non-negativity** is enforced by projecting the final estimate (and each
+  tracked point) onto `θ ≥ 0`, exactly as NNLS does — a component that
+  wants to go negative is pinned to zero and read as "unidentifiable".
+* **Forgetting widens the standard errors** (fewer effective observations),
+  and `λ` trades responsiveness against noise: smaller `λ` reacts faster
+  but is noisier. Column scaling and the `δ` prior handle conditioning the
+  same way the batch solver does.
+
+> **Scope note.** This brings the time-varying `β(t)` flagged as
+> out-of-scope in the `fit-all` caveat *into* scope — but only for
+> **full-state** samples (`find-parameters` needs every compartment, not
+> just `I(t)`). Tracking from an `I(t)`-only series is nonlinear and needs
+> the recursive *extended Kalman filter* in [`fit-all --ekf`](#ekf-tracking-a-time-varying-transmission-rate---ekf)
+> instead of plain RLS.
 
 ### Extremum detection (finite-difference derivative)
 
@@ -471,8 +570,92 @@ python main.py fit-all COVID_Germany_2020.json --ridge off  # disable
 > **Honest caveat.** `--fix` removes the *ill-conditioning* (identifiable,
 > physical parameters, finite SE), but constant-rate models still cannot
 > reproduce an intervention-driven decline when `S≈N` — the remaining
-> misfit is the genuine signal that a time-varying `β(t)` is needed (out of
-> the current fixed-parameter scope).
+> misfit is the genuine signal that a time-varying `β(t)` is needed. That
+> is exactly what `--ekf` (below) recovers.
+
+### EKF: tracking a time-varying transmission rate (`--ekf`)
+
+The least-squares fit above returns a **constant** rate per model. But the
+observation map (forward-simulate the ODE, read off `I`) is *nonlinear* in
+the parameters, so the recursive estimator that can recover a *time-varying*
+rate from `I(t)` is not plain RLS (as in `find-parameters`) but its
+nonlinear generalisation, the **extended Kalman filter (EKF)**. It is
+implemented in [`kalman.py`](kalman.py) and enabled as a **post-fit pass**
+on one model:
+
+```bash
+python main.py fit-all COVID_Germany_2020.json --ekf            # AICc-best model
+python main.py fit-all COVID_Germany_2020.json --ekf SIR        # a named model
+python main.py fit-all COVID_Germany_2020.json --ekf SIR --ekf-q 0.05 --ekf-r 0.08
+```
+
+How it is set up (and why it is *observable*):
+
+* the filter state is the model's compartment vector **augmented with the
+  single transmission / exposure rate** (`β`, or `α` for the misinformation
+  models — always the first rate);
+* **every other rate is held fixed at its LS value.** A scalar observation
+  per step carries ~one degree of freedom, so tracking *one* rate against a
+  fixed backbone is well-posed; augmenting several simultaneously-drifting
+  rates is not identifiable from `I(t)` alone (the same unidentifiability
+  `fit-all` flags as `[unident.]`) and makes the filter diverge;
+* the rate follows a random walk whose process-noise std `--ekf-q` (fraction
+  of the LS value per √day) is the EKF analogue of the RLS forgetting factor
+  — larger ⇒ faster tracking, noisier `β̂(t)`; `≈0` pins it constant;
+* the filter is **seeded from the model's LS fit** (rates + latent ICs),
+  which removes the EKF's notorious sensitivity to its starting point.
+
+| Flag | Default | Effect |
+|---|---|---|
+| `--ekf [MODEL]` | off | Run the EKF on `MODEL` (or the AICc-best model if bare). Saves `figs/<sample>_ekf_track.png`. |
+| `--ekf-q Q_REL` | `0.03` | Rate process-noise std, fraction of the LS rate per √day. Bigger tracks faster / noisier. |
+| `--ekf-r R_REL` | `0.05` | Observation-noise std, fraction of the local infected count (proportional noise). |
+
+The report compares the constant-rate baseline to the tracked rate and
+prints a `time variation DETECTED / consistent with a constant rate`
+verdict (drift over the second half vs the median 1σ band):
+
+```text
+EKF transmission tracking: SIR  (tracked rate: beta)
+  EKF beta   final / range (2nd half) : 0.1268  [0.0294, 0.1275]
+  Tracked drift vs median 1-sigma     : 0.098 vs 0.014  -> time variation DETECTED
+  RMSE  constant-LS -> time-varying EKF : ...
+```
+
+The two-panel plot shows the observed `I(t)` with the constant-LS curve and
+the EKF curve (top), and `β̂(t) ± 1σ` against the constant LS value
+(bottom).
+
+#### Effectiveness — where the EKF helps and where it does not
+
+The EKF was evaluated against the constant-rate LS fit on synthetic and real
+data:
+
+* **Synthetic SIR with a β step `0.30 → 0.12` on day 30 (only `I(t)` shown
+  to the filter).** The LS fit returns a meaningless average `β ≈ 0.18`; the
+  EKF tracks `β̂` from `0.30` down to `0.12` within ~10 days of the step,
+  and its `±1σ` band correctly *widens* once `I → 0` (no infections ⇒ no
+  information about `β`). **Clear win.**
+* **COVID-19 Germany 2020 (122 days, real).** Tracking `β` on SIR
+  (`γ` fixed at `0.1`) recovers the first-wave history a constant `β` cannot:
+  `R₀ = β/γ ≈ 3.3` during the March exponential growth, collapsing below 1
+  (`R₀ ≈ 0.6`) after the lockdown, then rising again toward reopening
+  (`R₀ ≈ 1.3`). **Clear win** — and exactly the signal the *Honest caveat*
+  above predicts.
+* **1978 flu boarding school (14 days, real, single clean wave).** Here a
+  constant `β` is already adequate, so the EKF gives **no RMSE improvement**
+  (slightly worse, as sub-stepped Euler on a fast `β ≈ 5` epidemic is less
+  accurate than the LSODA-based LS simulation) and any "detected" drift is
+  mostly filter transient. **Constant-rate LS is the better tool here.**
+
+**Conclusion.** The EKF is effective precisely when the LS fit is *not*:
+long enough series in which transmission genuinely varies (interventions,
+behaviour, variants). On short, clean, single-wave epidemics the constant-
+rate batch fit is preferable. Practical caveats: results depend on the
+`--ekf-q` / `--ekf-r` tuning; non-negativity is enforced by clipping but the
+LS upper bound (`RATE_MAX`) is **not**, so on a near-railed fit (flu)
+`β̂(t)` can wander above it; and only the transmission rate is tracked by
+design.
 
 ---
 

@@ -9,7 +9,7 @@ Five commands:
     python main.py run-all                       Run every model with defaults.
     python main.py run <MODEL>                   Run one model.
     python main.py sample <MODEL> <FILENAME>     Save a JSON sample to samples/.
-    python main.py find-parameters <SAMPLE>      Recover rates from a sample (NNLS).
+    python main.py find-parameters <SAMPLE>      Recover rates from a sample (batch NNLS or RLS).
     python main.py plot-sample <SAMPLE>          Plot the time series of a JSON sample.
 
 Parameter overrides for ``run`` and ``sample`` use ``--param KEY=VALUE``,
@@ -152,12 +152,28 @@ def _resolve_sample_path(name: str) -> str:
 
 
 def cmd_find_parameters(args: argparse.Namespace) -> None:
-    find_parameters(
+    if not (0.0 < args.forgetting <= 1.0):
+        sys.exit(
+            f"error: --forgetting must be in (0, 1], got {args.forgetting}"
+        )
+    if args.rls_delta <= 0.0:
+        sys.exit(f"error: --rls-delta must be > 0, got {args.rls_delta}")
+    if args.method == "batch" and (args.forgetting != 1.0 or args.track):
+        print("note: --forgetting/--track only apply to --method rls; ignoring "
+              "them for the batch solve.")
+    result = find_parameters(
         _resolve_sample_path(args.sample),
         weighting=args.weighting,
         ridge=args.ridge,
         scale=args.scale,
+        method=args.method,
+        forgetting=args.forgetting,
+        rls_delta=args.rls_delta,
+        track=args.track,
+        show=not args.no_show,
     )
+    if not args.no_show and result.get("plot_path"):
+        plt.show()
 
 
 def cmd_plot_sample(args: argparse.Namespace) -> None:
@@ -179,6 +195,7 @@ def cmd_fit_all(args: argparse.Namespace) -> None:
     result = fit_all_models(
         _resolve_sample_path(args.sample),
         loss=args.loss, fixed=fixed, ridge=args.ridge,
+        ekf=args.ekf, ekf_q=args.ekf_q, ekf_r=args.ekf_r,
         show=not args.no_show,
     )
     print_se_report(result)
@@ -286,6 +303,54 @@ def build_parser() -> argparse.ArgumentParser:
             "(column scaling is ON by default and improves conditioning)."
         ),
     )
+    p_find.add_argument(
+        "--method",
+        choices=["batch", "rls"],
+        default="batch",
+        help=(
+            "Linear-solve strategy. 'batch' (default) = one direct "
+            "non-negative WLS solve; 'rls' = recursive least squares walked "
+            "one time step at a time. With --forgetting 1 (default) RLS "
+            "reproduces the batch estimate; with --forgetting <1 it tracks "
+            "time-varying rates and saves a theta(t) trajectory plot."
+        ),
+    )
+    p_find.add_argument(
+        "--forgetting",
+        type=float,
+        default=1.0,
+        metavar="LAMBDA",
+        help=(
+            "RLS forgetting factor lambda in (0,1] (used with --method rls). "
+            "1.0 = no forgetting (equivalent to batch); <1 gives a sliding "
+            "memory of ~1/(1-lambda) steps that tracks time-varying rates "
+            "(implies a tracked trajectory). Typical: 0.97-0.999."
+        ),
+    )
+    p_find.add_argument(
+        "--rls-delta",
+        type=float,
+        default=1.0e-6,
+        metavar="DELTA",
+        help=(
+            "RLS diffuse-prior scale P0 = I/delta (used with --method rls). "
+            "Small delta (default 1e-6) makes the prior negligible."
+        ),
+    )
+    p_find.add_argument(
+        "--track",
+        action="store_true",
+        help=(
+            "Record and plot the RLS parameter trajectory theta(t) even when "
+            "--forgetting is 1 (shows the recursion converging to the batch "
+            "estimate). Always on when --forgetting <1."
+        ),
+    )
+    p_find.add_argument(
+        "--no-show",
+        action="store_true",
+        help="Do not open the RLS trajectory plot window (the PNG is still saved).",
+    )
     p_find.set_defaults(func=cmd_find_parameters, scale=True)
 
     # plot-sample ----------------------------------------------------------
@@ -341,6 +406,35 @@ def build_parser() -> argparse.ArgumentParser:
               "exceeds the threshold; 'off'/0 = disabled; a number = manual "
               "lambda. Bounds over-parameterised / rank-deficient models "
               "(SEDIS/SEDPNR); does NOT separate a collinear pair (use --fix)."),
+    )
+    p_fitall.add_argument(
+        "--ekf",
+        nargs="?",
+        const="best",
+        default=None,
+        metavar="MODEL",
+        help=("Run a post-fit extended Kalman filter that tracks a "
+              "time-varying transmission rate beta(t)/alpha(t) from the I(t) "
+              "series, seeded from the model's LS fit. Bare --ekf uses the "
+              "AICc-best model; --ekf SIR picks a model by name. Saves a "
+              "two-panel theta(t) plot to figs/<sample>_ekf_track.png."),
+    )
+    p_fitall.add_argument(
+        "--ekf-q",
+        type=float,
+        default=0.03,
+        metavar="Q_REL",
+        help=("EKF process-noise std of the tracked rate, as a fraction of "
+              "its LS value per sqrt(day) (default 0.03). Larger = faster "
+              "tracking but noisier; ~0 pins the rate constant."),
+    )
+    p_fitall.add_argument(
+        "--ekf-r",
+        type=float,
+        default=0.05,
+        metavar="R_REL",
+        help=("EKF observation-noise std as a fraction of the local infected "
+              "count (default 0.05)."),
     )
     p_fitall.add_argument(
         "--no-show", action="store_true",
